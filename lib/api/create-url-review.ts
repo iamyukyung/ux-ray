@@ -12,11 +12,13 @@ import {
   loadUrlReportFromSession,
   saveUrlReportToSession,
 } from "@/lib/url-review-assets";
+import { UrlReviewAssetError } from "@/lib/url-review-report-utils";
 
 export type UrlReviewClientErrorCode =
   | keyof typeof URL_REVIEW_ERROR_MESSAGES
   | "NETWORK_ERROR"
-  | "ABORTED";
+  | "ABORTED"
+  | "ASSET_STORAGE_FAILED";
 
 export class UrlReviewRequestError extends Error {
   readonly code: UrlReviewClientErrorCode;
@@ -39,6 +41,7 @@ export interface UrlReviewResponse {
 
 interface UrlReviewStatusResponse {
   status: "processing" | "done" | "error" | "not-found";
+  reviewId?: string;
   stepIndex?: number;
   report?: ScreenshotReviewReport;
   debug?: ScreenshotReviewDebugInfo;
@@ -53,9 +56,16 @@ const CLIENT_ERROR_MESSAGES: Record<UrlReviewClientErrorCode, string> = {
   ...URL_REVIEW_ERROR_MESSAGES,
   NETWORK_ERROR: "네트워크 연결을 확인한 뒤 다시 시도해주세요.",
   ABORTED: "요청이 취소되었어요.",
+  ASSET_STORAGE_FAILED: "캡처 이미지를 저장하지 못했어요. 잠시 후 다시 시도해주세요.",
 };
 
 let inFlightController: AbortController | null = null;
+
+function devLog(event: string, payload: Record<string, unknown>): void {
+  if (process.env.NODE_ENV === "development") {
+    console.info(event, payload);
+  }
+}
 
 function mapServerErrorCode(code: string): UrlReviewClientErrorCode {
   if (code in CLIENT_ERROR_MESSAGES) {
@@ -130,25 +140,49 @@ async function startUrlReviewJob(
   return result.reviewId;
 }
 
-async function finalizeUrlReviewResponse(
+export async function finalizeUrlReviewResponse(
   reviewId: string,
   report: ScreenshotReviewReport,
   debug: ScreenshotReviewDebugInfo | undefined,
   transferAssets: UrlScreenAssetTransfer[]
 ): Promise<UrlReviewResponse> {
-  // 폴링 GET이 status: "done"을 반환한 직후(또는 새로고침 시 session+IndexedDB 복원)에만 실행.
-  const ingested = await ingestUrlReviewScreenAssets({
+  devLog("[url-review:finalize-start]", {
     reviewId,
-    report,
-    transferAssets,
+    screenAssetCount: transferAssets.length || report.screenAssets?.length || 0,
   });
 
-  return {
-    reviewId,
-    report: ingested.report,
-    debug,
-    screens: ingested.screens,
-  };
+  try {
+    const ingested = await ingestUrlReviewScreenAssets({
+      reviewId,
+      report,
+      transferAssets,
+    });
+
+    devLog("[url-review:finalize-complete]", {
+      reviewId,
+      storedAssetCount: ingested.screens.length,
+      assetKeys: ingested.report.screenAssets?.map((asset) => asset.assetKey) ?? [],
+    });
+
+    return {
+      reviewId,
+      report: ingested.report,
+      debug,
+      screens: ingested.screens,
+    };
+  } catch (error) {
+    devLog("[url-review:finalize-error]", {
+      reviewId,
+      errorName: error instanceof Error ? error.name : "UnknownError",
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+
+    if (error instanceof UrlReviewAssetError) {
+      throw new UrlReviewRequestError("ASSET_STORAGE_FAILED", error.message);
+    }
+
+    throw error;
+  }
 }
 
 async function pollUrlReviewJob(
@@ -207,12 +241,23 @@ async function pollUrlReviewJob(
       throw new UrlReviewRequestError("INVALID_AI_RESPONSE", CLIENT_ERROR_MESSAGES.INVALID_AI_RESPONSE);
     }
 
-    // POST 202 직후가 아니라, 폴링 GET이 done을 반환한 이 시점에서 screenAssets를 IndexedDB에 저장.
+    const resolvedReviewId = result.reviewId ?? reviewId;
+    const transferAssets = result.screenAssets ?? [];
+
+    devLog("[screenshot-assets:poll-done]", {
+      reviewId: resolvedReviewId,
+      screenAssetCount: transferAssets.length,
+      screenIds: transferAssets.map((asset) => asset.screenId),
+      hasPreviewBase64: transferAssets.some((asset) => Boolean(asset.preview.base64)),
+      previewWidth: transferAssets[0]?.preview.width,
+      previewHeight: transferAssets[0]?.preview.height,
+    });
+
     return finalizeUrlReviewResponse(
-      reviewId,
+      resolvedReviewId,
       result.report,
       result.debug,
-      result.screenAssets ?? []
+      transferAssets
     );
   }
 }

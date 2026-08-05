@@ -56,23 +56,29 @@ export async function GET(
     );
   }
 
-  const body =
-    process.env.NODE_ENV === "development"
-      ? {
-          status: "done" as const,
-          report: job.result.report,
-          ...(job.result.screenAssetsTransfer?.length
-            ? { screenAssets: job.result.screenAssetsTransfer }
-            : {}),
-          _debug: job.result.debug,
-        }
-      : {
-          status: "done" as const,
-          report: job.result.report,
-          ...(job.result.screenAssetsTransfer?.length
-            ? { screenAssets: job.result.screenAssetsTransfer }
-            : {}),
-        };
+  const body = {
+    status: "done" as const,
+    reviewId: params.reviewId,
+    report: job.result.report,
+    ...(job.result.screenAssetsTransfer?.length
+      ? { screenAssets: job.result.screenAssetsTransfer }
+      : {}),
+    ...(process.env.NODE_ENV === "development"
+      ? { _debug: job.result.debug }
+      : {}),
+  };
+
+  if (process.env.NODE_ENV === "development") {
+    const transfer = job.result.screenAssetsTransfer ?? [];
+    console.info("[screenshot-assets:poll-done]", {
+      reviewId: params.reviewId,
+      screenAssetCount: transfer.length,
+      screenIds: transfer.map((asset) => asset.screenId),
+      hasPreviewBase64: transfer.some((asset) => Boolean(asset.preview.base64)),
+      previewWidth: transfer[0]?.preview.width,
+      previewHeight: transfer[0]?.preview.height,
+    });
+  }
 
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

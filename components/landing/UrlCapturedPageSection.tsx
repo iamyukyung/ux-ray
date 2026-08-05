@@ -10,6 +10,19 @@ import { cn } from "@/lib/utils";
 
 export type UrlAssetLoadState = "idle" | "loading" | "ready" | "missing";
 
+function logPreviewImageError(input: {
+  reviewId?: string;
+  screenId?: string;
+  previewUrl: string;
+}): void {
+  if (process.env.NODE_ENV !== "development") return;
+  console.info("[url-review:preview-render-error]", {
+    reviewId: input.reviewId ?? "unknown",
+    screenId: input.screenId ?? "unknown",
+    hasObjectUrl: input.previewUrl.startsWith("blob:"),
+  });
+}
+
 interface UrlCapturedPageSectionProps {
   report: ScreenshotReviewReport;
   screen: UploadedScreen | null;
@@ -113,6 +126,12 @@ export function UrlCapturedPageSection({
                 src={screen.previewUrl}
                 alt={`${screen.screenName} 캡처`}
                 className="mx-auto block h-auto w-full max-w-full object-contain"
+                onError={() =>
+                  logPreviewImageError({
+                    screenId: screen.id,
+                    previewUrl: screen.previewUrl,
+                  })
+                }
               />
             </div>
             <p className="border-t border-border px-4 py-2 text-xs text-ink-muted group-hover:text-ink">

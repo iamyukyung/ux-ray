@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { URL_ANALYSIS_STEPS } from "@/lib/analysis-steps";
 import {
   createUrlReview,
@@ -59,6 +60,7 @@ interface UrlFormProps {
 }
 
 export function UrlForm({ onPhaseChange }: UrlFormProps) {
+  const router = useRouter();
   const urlInputId = useId();
   const errorId = useId();
   const [phase, setPhase] = useState<ReviewPhase>("edit");
@@ -158,11 +160,11 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
 
       setActiveStepIndex(URL_ANALYSIS_STEPS.length - 1);
       await delay(300);
-      setReviewId(response.reviewId);
-      setReport(response.report);
-      setReportDebug(response.debug ?? null);
-      setScreens(response.screens);
-      setReviewPhase("report");
+
+      const normalizedUrl = normalizeUrl(fields.url);
+      router.push(
+        `/review/${response.reviewId}?input=url&url=${encodeURIComponent(normalizedUrl)}&deviceType=${fields.deviceType}`
+      );
     } catch (error) {
       if (error instanceof UrlReviewRequestError) {
         setReviewError({
@@ -181,6 +183,10 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    void runUrlReviewGeneration();
+  }
+
+  function handleStartClick() {
     void runUrlReviewGeneration();
   }
 
@@ -268,6 +274,7 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
   return (
     <form
       onSubmit={handleSubmit}
+      action="#"
       className="rounded-xl border border-border bg-surface p-6 shadow-panel sm:p-8"
       noValidate
     >
@@ -278,7 +285,6 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
           </label>
           <input
             id={urlInputId}
-            name="url"
             type="text"
             inputMode="url"
             autoComplete="url"
@@ -315,7 +321,6 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
                 >
                   <input
                     type="radio"
-                    name="deviceType"
                     value={device}
                     checked={selected}
                     onChange={() => updateField("deviceType", device)}
@@ -348,7 +353,6 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
                   <span className="flex items-start gap-3">
                     <input
                       type="radio"
-                      name="reviewLens"
                       value={lens}
                       checked={selected}
                       onChange={() => updateField("reviewLens", lens)}
@@ -446,7 +450,13 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
           </span>
         </label>
 
-        <Button type="submit" size="lg" disabled={isGenerating} className="min-h-11 w-full sm:w-auto">
+        <Button
+          type="button"
+          size="lg"
+          disabled={isGenerating}
+          className="min-h-11 w-full sm:w-auto"
+          onClick={handleStartClick}
+        >
           {isGenerating ? "분석 중…" : "UX 리뷰 시작하기"}
         </Button>
 

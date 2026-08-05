@@ -1,6 +1,7 @@
 import type { CropMetadata } from "@/lib/ai/image-preprocess";
 import { generateCapturePreviewWebp } from "@/lib/capture/capture-preview";
 import type { CapturedUrlPage } from "@/lib/capture/url-types";
+import { buildScreenAssetKey } from "@/lib/url-review-report-utils";
 import type {
   ReportScreenAssetRef,
   ScreenAssetCrop,
@@ -30,7 +31,7 @@ export function buildReportScreenAssetRefs(input: {
   return [
     {
       screenId: input.screenId,
-      assetKey: `${input.reviewId}:${input.screenId}`,
+      assetKey: buildScreenAssetKey(input.reviewId, input.screenId),
       originalWidth: input.originalWidth,
       originalHeight: input.originalHeight,
       previewWidth: input.previewWidth,

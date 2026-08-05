@@ -17,16 +17,31 @@ export interface StoredScreenAsset {
   createdAt: string;
 }
 
+export class ScreenAssetStoreError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ScreenAssetStoreError";
+  }
+}
+
 function isIndexedDbAvailable(): boolean {
   return typeof indexedDB !== "undefined";
 }
 
+function assertIndexedDbAvailable(): void {
+  if (!isIndexedDbAvailable()) {
+    throw new ScreenAssetStoreError("IndexedDB를 사용할 수 없는 환경입니다.");
+  }
+}
+
 function openScreenAssetDb(): Promise<IDBDatabase> {
+  assertIndexedDbAvailable();
+
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onerror = () => {
-      reject(request.error ?? new Error("Failed to open screen asset database."));
+      reject(request.error ?? new ScreenAssetStoreError("screen asset DB를 열지 못했습니다."));
     };
 
     request.onsuccess = () => {
@@ -43,8 +58,6 @@ function openScreenAssetDb(): Promise<IDBDatabase> {
 }
 
 export async function saveScreenAsset(record: StoredScreenAsset): Promise<void> {
-  if (!isIndexedDbAvailable()) return;
-
   const db = await openScreenAssetDb();
   try {
     await new Promise<void>((resolve, reject) => {
@@ -53,12 +66,15 @@ export async function saveScreenAsset(record: StoredScreenAsset): Promise<void> 
       const request = store.put(record);
 
       request.onerror = () => {
-        reject(request.error ?? new Error("Failed to save screen asset."));
+        reject(request.error ?? new ScreenAssetStoreError("screen asset 저장에 실패했습니다."));
       };
 
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => {
-        reject(transaction.error ?? new Error("Failed to save screen asset."));
+        reject(transaction.error ?? new ScreenAssetStoreError("screen asset 저장 트랜잭션에 실패했습니다."));
+      };
+      transaction.onabort = () => {
+        reject(transaction.error ?? new ScreenAssetStoreError("screen asset 저장 트랜잭션이 중단되었습니다."));
       };
     });
   } finally {
@@ -67,8 +83,6 @@ export async function saveScreenAsset(record: StoredScreenAsset): Promise<void> 
 }
 
 export async function getScreenAsset(key: string): Promise<StoredScreenAsset | null> {
-  if (!isIndexedDbAvailable()) return null;
-
   const db = await openScreenAssetDb();
   try {
     return await new Promise<StoredScreenAsset | null>((resolve, reject) => {
@@ -77,11 +91,18 @@ export async function getScreenAsset(key: string): Promise<StoredScreenAsset | n
       const request = store.get(key);
 
       request.onerror = () => {
-        reject(request.error ?? new Error("Failed to read screen asset."));
+        reject(request.error ?? new ScreenAssetStoreError("screen asset 조회에 실패했습니다."));
       };
 
       request.onsuccess = () => {
         resolve((request.result as StoredScreenAsset | undefined) ?? null);
+      };
+
+      transaction.onerror = () => {
+        reject(transaction.error ?? new ScreenAssetStoreError("screen asset 조회 트랜잭션에 실패했습니다."));
+      };
+      transaction.onabort = () => {
+        reject(transaction.error ?? new ScreenAssetStoreError("screen asset 조회 트랜잭션이 중단되었습니다."));
       };
     });
   } finally {
@@ -90,7 +111,7 @@ export async function getScreenAsset(key: string): Promise<StoredScreenAsset | n
 }
 
 export async function deleteScreenAssets(keys: string[]): Promise<void> {
-  if (!isIndexedDbAvailable() || keys.length === 0) return;
+  if (keys.length === 0) return;
 
   const db = await openScreenAssetDb();
   try {
@@ -104,7 +125,10 @@ export async function deleteScreenAssets(keys: string[]): Promise<void> {
 
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => {
-        reject(transaction.error ?? new Error("Failed to delete screen assets."));
+        reject(transaction.error ?? new ScreenAssetStoreError("screen asset 삭제에 실패했습니다."));
+      };
+      transaction.onabort = () => {
+        reject(transaction.error ?? new ScreenAssetStoreError("screen asset 삭제 트랜잭션이 중단되었습니다."));
       };
     });
   } finally {
@@ -117,8 +141,6 @@ export async function deleteScreenAssetsForReview(
   assetKeys: string[]
 ): Promise<void> {
   const keys =
-    assetKeys.length > 0
-      ? assetKeys
-      : [`${reviewId}:url-screen-1`];
+    assetKeys.length > 0 ? assetKeys : [`${reviewId}:url-screen-1`];
   await deleteScreenAssets(keys);
 }

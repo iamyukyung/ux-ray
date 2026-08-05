@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   loadUrlReviewScreensFromStorage,
   revokeUploadedScreenUrls,
+  isUrlReviewReport,
 } from "@/lib/url-review-assets";
 import type { ScreenshotReviewReport, UploadedScreen } from "@/lib/types";
 import type { UrlAssetLoadState } from "@/components/landing/UrlCapturedPageSection";
@@ -25,7 +26,7 @@ export function useUrlReviewScreens(
       return;
     }
 
-    if (!reviewId || !report || report.sourceType !== "url") {
+    if (!reviewId || !isUrlReviewReport(report)) {
       setScreens([]);
       setAssetLoadState("idle");
       return;
@@ -50,7 +51,7 @@ export function useUrlReviewScreens(
     return () => {
       cancelled = true;
     };
-  }, [reviewId, report, initialScreens]);
+  }, [reviewId, report, initialScreens.length]);
 
   useEffect(() => {
     return () => {

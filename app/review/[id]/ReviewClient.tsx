@@ -31,12 +31,9 @@ import {
   pollUrlReviewById,
   UrlReviewRequestError,
   type UrlReviewClientErrorCode,
+  type UrlReviewResponse,
 } from "@/lib/api/create-url-review";
-import {
-  loadUrlReportFromSession,
-  revokeUploadedScreenUrls,
-} from "@/lib/url-review-assets";
-import { useUrlReviewScreens } from "@/lib/use-url-review-screens";
+import { revokeUploadedScreenUrls } from "@/lib/url-review-assets";
 import { getScreenshotReviewContext } from "@/lib/screenshot-review-store";
 import { SCREENSHOT_MOCK_STEP_DELAY_MS } from "@/lib/screenshot-review-utils";
 import type { CaptureProgressStep, CaptureResult } from "@/lib/capture-types";
@@ -89,38 +86,37 @@ export function ReviewClient({ reportId }: { reportId: string }) {
   const [zoomScreen, setZoomScreen] = useState<UploadedScreen | null>(null);
   const [zoomCropHighlight, setZoomCropHighlight] = useState<ZoomCropHighlight | null>(null);
   const zoomReturnFocusRef = useRef<HTMLElement | null>(null);
-
-  const { screens: restoredUrlScreens, assetLoadState: restoredAssetLoadState } =
-    useUrlReviewScreens(
-      reportId,
-      aiReport,
-      urlScreens
-    );
+  const urlScreensRef = useRef<UploadedScreen[]>([]);
 
   useEffect(() => {
-    return () => {
-      revokeUploadedScreenUrls(urlScreens);
-    };
+    urlScreensRef.current = urlScreens;
   }, [urlScreens]);
 
   useEffect(() => {
+    return () => {
+      revokeUploadedScreenUrls(urlScreensRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
+
+    function applyUrlReviewResponse(response: UrlReviewResponse) {
+      setActiveCaptureStep(URL_ANALYSIS_STEPS.length - 1);
+      setAiReport(response.report);
+      setAiDebug(response.debug ?? null);
+      setUrlScreens(response.screens);
+      setUrlAssetLoadState(response.screens.length > 0 ? "ready" : "missing");
+      setStatus("ready");
+    }
 
     async function runRealUrlReview() {
       setUrlReviewError(null);
       setAiReport(null);
       setAiDebug(null);
       setUrlScreens([]);
-      setUrlAssetLoadState("idle");
+      setUrlAssetLoadState("loading");
       setActiveCaptureStep(0);
-
-      const cachedReport = loadUrlReportFromSession(reportId);
-      if (cachedReport) {
-        setAiReport(cachedReport);
-        setUrlAssetLoadState("loading");
-        setStatus("ready");
-        return;
-      }
 
       try {
         const response = await pollUrlReviewById(reportId, (stepIndex) => {
@@ -131,13 +127,8 @@ export function ReviewClient({ reportId }: { reportId: string }) {
 
         if (cancelled) return;
 
-        setActiveCaptureStep(URL_ANALYSIS_STEPS.length - 1);
         await delay(300);
-        setAiReport(response.report);
-        setAiDebug(response.debug ?? null);
-        setUrlScreens(response.screens);
-        setUrlAssetLoadState(response.screens.length > 0 ? "ready" : "missing");
-        setStatus("ready");
+        applyUrlReviewResponse(response);
       } catch (error) {
         if (cancelled) return;
 
@@ -245,6 +236,8 @@ export function ReviewClient({ reportId }: { reportId: string }) {
       setReport(undefined);
       setAiReport(null);
       setAiDebug(null);
+      setUrlScreens([]);
+      setUrlAssetLoadState("idle");
 
       if (inputType === "screenshots") {
         const context = getScreenshotReviewContext(reportId);
@@ -328,21 +321,13 @@ export function ReviewClient({ reportId }: { reportId: string }) {
     }
 
     if (status === "ready" && aiReport) {
-      const displayScreens = restoredUrlScreens.length > 0 ? restoredUrlScreens : urlScreens;
-      const displayAssetLoadState =
-        displayScreens.length > 0
-          ? "ready"
-          : urlAssetLoadState !== "idle"
-            ? urlAssetLoadState
-            : restoredAssetLoadState;
-
       return (
         <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
           <ScreenshotReviewReportView
             report={aiReport}
             debug={aiDebug}
-            screens={displayScreens}
-            assetLoadState={displayAssetLoadState}
+            screens={urlScreens}
+            assetLoadState={urlAssetLoadState}
             onEditInput={handleBackToHome}
             onStartNewReview={handleBackToHome}
             onZoom={handleUrlZoom}
