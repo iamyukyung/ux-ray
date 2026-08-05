@@ -11,13 +11,16 @@ const INPUT_OPTIONS: { id: ReviewInputType; label: string }[] = [
   { id: "screenshots", label: "화면 이미지" },
 ];
 
-type ScreenshotPhase = "edit" | "loading" | "report" | "error";
+type ReviewPhase = "edit" | "loading" | "report" | "error";
 
 export function ReviewInputTabs() {
   const [inputType, setInputType] = useState<ReviewInputType>("url");
-  const [screenshotPhase, setScreenshotPhase] = useState<ScreenshotPhase>("edit");
+  const [screenshotPhase, setScreenshotPhase] = useState<ReviewPhase>("edit");
+  const [urlPhase, setUrlPhase] = useState<ReviewPhase>("edit");
 
-  const isReportView = inputType === "screenshots" && screenshotPhase === "report";
+  const isReportView =
+    (inputType === "screenshots" && screenshotPhase === "report") ||
+    (inputType === "url" && urlPhase === "report");
 
   return (
     <div className={cn("w-full", isReportView ? "max-w-5xl" : "max-w-3xl")}>
@@ -41,14 +44,13 @@ export function ReviewInputTabs() {
         ))}
       </div>
 
-      {/* 탭 전환 시 입력·업로드 상태 유지를 위해 양쪽 패널을 mount 상태로 유지 */}
       <div
         role="tabpanel"
         aria-label="웹사이트 URL"
         hidden={inputType !== "url"}
         className={inputType !== "url" ? "hidden" : undefined}
       >
-        <UrlForm />
+        <UrlForm onPhaseChange={setUrlPhase} />
       </div>
       <div
         role="tabpanel"

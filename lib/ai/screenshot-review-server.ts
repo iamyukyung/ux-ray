@@ -30,7 +30,9 @@ import type {
   ScreenshotReviewMode,
   ScreenshotReviewReport,
   ScreenshotVisualEvidence,
+  UrlReviewSource,
 } from "@/lib/types";
+import type { UrlDomSnapshot } from "@/lib/capture/url-types";
 import { SCREEN_DEVICE_LABELS } from "@/lib/types";
 import { z } from "zod";
 
@@ -58,11 +60,22 @@ export interface ScreenshotReviewApiError {
 export interface ValidatedScreenshotInput {
   metadata: ScreenshotReviewMetadata;
   images: ValidatedScreenshotImage[];
+  urlContext?: UrlReviewPipelineContext;
+}
+
+export interface UrlReviewPipelineContext {
+  requestedUrl: string;
+  finalUrl: string;
+  pageTitle: string | null;
+  deviceType: "desktop" | "mobile";
+  domSnapshot: UrlDomSnapshot;
 }
 
 export interface ScreenshotReviewMetadata {
   reviewMode: ScreenshotReviewMode;
   reviewLens: ReviewLens;
+  sourceType?: "screenshots" | "url";
+  urlSource?: UrlReviewSource;
   projectName?: string;
   userGoal?: string;
   targetUser?: string;

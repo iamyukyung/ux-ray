@@ -1,8 +1,5 @@
 import type { PipelineStage } from "@/lib/ai/pipeline/pipeline-stage";
-import type {
-  ScreenshotReviewAnalysisResult,
-  ScreenshotReviewApiError,
-} from "@/lib/ai/screenshot-review-server";
+import type { ScreenshotReviewAnalysisResult } from "@/lib/ai/screenshot-review-server";
 import { SCREENSHOT_ANALYSIS_STEPS } from "@/lib/analysis-steps";
 
 export type ScreenshotReviewJobStatus = "processing" | "done" | "error";
@@ -15,14 +12,22 @@ export interface ScreenshotReviewJob {
   createdAt: number;
   updatedAt: number;
   result?: ScreenshotReviewAnalysisResult;
-  error?: ScreenshotReviewApiError["error"];
+  error?: {
+    code: string;
+    message: string;
+    stage?: PipelineStage;
+  };
 }
 
 const JOB_TTL_MS = 30 * 60 * 1000;
 const LAST_STEP_INDEX = SCREENSHOT_ANALYSIS_STEPS.length - 1;
 
 /**
- * Fine-grained PipelineStage -> 5-step loading screen index mapping.
+ * 스크린샷·URL AI 리뷰 공용 비동기 job store.
+ * POST /api/reviews/screenshots · POST /api/reviews/url 가 job을 생성하고
+ * GET .../[reviewId] 폴링으로 상태를 조회합니다.
+ *
+ * Fine-grained PipelineStage -> step index mapping.
  * If Critic requests a rewrite, reviewer-request/parse can fire a second time;
  * updateScreenshotReviewJobStage clamps stepIndex so it never moves backward.
  */
@@ -97,20 +102,31 @@ export function completeScreenshotReviewJob(
   if (!job) return;
 
   job.status = "done";
-  job.stepIndex = LAST_STEP_INDEX;
+  job.stepIndex = Math.max(job.stepIndex, LAST_STEP_INDEX);
   job.result = result;
   job.updatedAt = Date.now();
 }
 
 export function failScreenshotReviewJob(
   id: string,
-  error: ScreenshotReviewApiError["error"]
+  error: {
+    code: string;
+    message: string;
+    stage?: PipelineStage;
+  }
 ): void {
   const job = jobs.get(id);
   if (!job) return;
 
   job.status = "error";
   job.error = error;
+  job.updatedAt = Date.now();
+}
+
+export function setScreenshotReviewJobStepIndex(id: string, stepIndex: number): void {
+  const job = jobs.get(id);
+  if (!job || job.status !== "processing") return;
+  job.stepIndex = Math.max(job.stepIndex, stepIndex);
   job.updatedAt = Date.now();
 }
 

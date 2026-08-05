@@ -35,7 +35,7 @@ export function setPipelineStage(
 }
 
 export interface ClientApiErrorBody {
-  code: ScreenshotReviewErrorCode;
+  code: string;
   message: string;
   stage?: PipelineStage;
 }

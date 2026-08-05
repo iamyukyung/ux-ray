@@ -79,6 +79,9 @@ function sanitizeEvidence(
     result.push({
       ...item,
       locationLabel,
+      source: item.source ?? "visual",
+      domElementId: item.domElementId ?? null,
+      visibleText: item.visibleText ?? null,
     });
   }
 

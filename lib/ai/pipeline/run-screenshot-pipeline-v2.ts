@@ -83,12 +83,14 @@ import {
   type PipelineStageTracker,
 } from "@/lib/ai/pipeline/pipeline-stage";
 import { SCREEN_DEVICE_LABELS } from "@/lib/types";
+import { formatDomSnapshotForPrompt } from "@/lib/capture/dom-snapshot";
 
 async function runObserverForScreen(
   client: ReturnType<typeof createOpenAIClient>,
   config: ReturnType<typeof getAiModelConfig>,
   processed: ProcessedScreenImage,
   screenMeta: ValidatedScreenshotInput["metadata"]["screens"][number],
+  urlContext: ValidatedScreenshotInput["urlContext"],
   requestId: string,
   deadline: PipelineDeadlineContext,
   tracker: PipelineStageTracker
@@ -105,6 +107,14 @@ async function runObserverForScreen(
         width: processed.width,
         height: processed.height,
         cropIds,
+        urlContext: urlContext
+          ? {
+              requestedUrl: urlContext.requestedUrl,
+              finalUrl: urlContext.finalUrl,
+              pageTitle: urlContext.pageTitle,
+              domSnapshotJson: formatDomSnapshotForPrompt(urlContext.domSnapshot),
+            }
+          : undefined,
       })
     ),
     ...imagePart(
@@ -167,6 +177,7 @@ function buildReviewerInput(
   processedScreens: ProcessedScreenImage[],
   config: ReturnType<typeof getAiModelConfig>,
   selectedCrops: ProcessedCrop[],
+  urlContext: ValidatedScreenshotInput["urlContext"],
   rewrite?: {
     previousDraft: ScreenshotReviewDraft;
     critique: ScreenshotReviewCritique;
@@ -191,6 +202,15 @@ function buildReviewerInput(
         targetUser: context.targetUser,
         focusArea: context.focusArea,
         screenOrder,
+        urlContext: urlContext
+          ? {
+              requestedUrl: urlContext.requestedUrl,
+              finalUrl: urlContext.finalUrl,
+              pageTitle: urlContext.pageTitle,
+              deviceType: urlContext.deviceType,
+              domSnapshotJson: formatDomSnapshotForPrompt(urlContext.domSnapshot),
+            }
+          : undefined,
       })
     ),
     textPart(`Observation JSON:\n${JSON.stringify(observations, null, 2)}`),
@@ -256,6 +276,7 @@ async function runReviewer(
   observations: ScreenshotObservation[],
   processedScreens: ProcessedScreenImage[],
   selectedCrops: ProcessedCrop[],
+  urlContext: ValidatedScreenshotInput["urlContext"],
   requestId: string,
   deadline: PipelineDeadlineContext,
   tracker: PipelineStageTracker,
@@ -290,6 +311,7 @@ async function runReviewer(
       processedScreens,
       config,
       selectedCrops,
+      urlContext,
       rewrite
     ),
     schema: ScreenshotReviewDraftSchema,
@@ -457,6 +479,7 @@ export async function runScreenshotPipelineV2(
         config,
         processedScreens[index]!,
         sortedScreens[index]!,
+        input.urlContext,
         requestId,
         deadline,
         tracker
@@ -499,6 +522,7 @@ export async function runScreenshotPipelineV2(
       observations,
       processedScreens,
       initialReviewerCrops,
+      input.urlContext,
       requestId,
       deadline,
       tracker
@@ -586,6 +610,7 @@ export async function runScreenshotPipelineV2(
         observations,
         processedScreens,
         rewriteCrops,
+        input.urlContext,
         requestId,
         deadline,
         tracker,

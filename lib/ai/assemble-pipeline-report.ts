@@ -74,6 +74,9 @@ function mapVisualEvidence(
       locationLabel: item.locationLabel,
       observation: item.observation,
       confidence: item.confidence,
+      source: item.source,
+      domElementId: item.domElementId,
+      visibleText: item.visibleText,
     });
   }
 
@@ -133,7 +136,9 @@ export function assemblePipelineReport(input: {
     .slice(0, 5);
 
   return {
-    inputType: "screenshots",
+    inputType: input.metadata.sourceType === "url" ? "url" : "screenshots",
+    sourceType: input.metadata.sourceType ?? "screenshots",
+    source: input.metadata.urlSource,
     analysisType: "ai",
     pipelineVersion: PIPELINE_VERSION,
     reviewMode: input.metadata.reviewMode,

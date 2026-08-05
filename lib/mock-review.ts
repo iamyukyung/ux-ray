@@ -806,6 +806,19 @@ export function getMockReview(id: string): ReviewReport | undefined {
   return MOCK_REPORTS[id];
 }
 
+/** `/review/[id]` 데모 전용 id — 실제 AI URL 리뷰 job id(UUID)와 구분합니다. */
+const MOCK_REVIEW_IDS = new Set([
+  "demo-1",
+  "demo-2",
+  "screenshot-demo",
+  "error-demo",
+  "not-found-demo",
+]);
+
+export function isMockReviewId(id: string): boolean {
+  return MOCK_REVIEW_IDS.has(id);
+}
+
 /**
  * 랜딩 페이지에서 URL을 제출했을 때 이동할 리포트 id를 결정합니다.
  * MVP에는 실제 분석 파이프라인이 없으므로, 입력값에 특정 키워드가 포함되면

@@ -13,12 +13,13 @@ import { getReviewModeLabel } from "@/lib/screenshot-review-utils";
 import {
   ANALYSIS_CONFIDENCE_LABELS,
   REVIEW_LENS_META,
+  SCREEN_DEVICE_LABELS,
   type ScreenshotReviewDebugInfo,
   type ScreenshotReviewReport,
   type ScreenshotVisualEvidence,
   type UploadedScreen,
 } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { cn, formatUrlForDisplay } from "@/lib/utils";
 
 interface ScreenshotReviewReportViewProps {
   report: ScreenshotReviewReport;
@@ -45,6 +46,9 @@ export function ScreenshotReviewReportView({
   const limitations = report.limitations ?? [];
   const reviewLens = report.reviewLens ?? "general";
   const reviewLensLabel = REVIEW_LENS_META[reviewLens].reportLabel;
+  const isUrlReport = report.sourceType === "url" || report.inputType === "url";
+  const urlSource = report.source;
+  const showScreensSection = screens.length > 0;
 
   function handleScreenReferenceClick(screenId: string) {
     setHighlightedScreenId(screenId);
@@ -87,12 +91,14 @@ export function ScreenshotReviewReportView({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="review-banner-heading" className="text-lg font-semibold text-ink">
-              {isAiReport ? "AI 이미지 분석" : "이미지 기반 Mock 리뷰"}
+              {isUrlReport ? "AI URL 분석" : isAiReport ? "AI 이미지 분석" : "이미지 기반 Mock 리뷰"}
             </h2>
             <p className="mt-2 text-sm leading-relaxed text-ink-muted">
-              {isAiReport
-                ? "업로드된 화면과 입력한 리뷰 맥락을 기반으로 분석했습니다."
-                : "현재 리포트는 화면 정보와 입력한 맥락을 기반으로 생성된 예시입니다. 실제 이미지 내용을 AI가 분석한 결과는 아닙니다."}
+              {isUrlReport
+                ? "공개 URL 페이지의 화면과 구조 정보를 기반으로 분석했습니다."
+                : isAiReport
+                  ? "업로드된 화면과 입력한 리뷰 맥락을 기반으로 분석했습니다."
+                  : "현재 리포트는 화면 정보와 입력한 맥락을 기반으로 생성된 예시입니다. 실제 이미지 내용을 AI가 분석한 결과는 아닙니다."}
             </p>
           </div>
           <span
@@ -103,7 +109,7 @@ export function ScreenshotReviewReportView({
                 : "border-accent/40 bg-surface text-accent"
             )}
           >
-            {isAiReport ? "AI 이미지 분석" : "Mock 리뷰"}
+            {isAiReport ? (isUrlReport ? "AI URL 분석" : "AI 이미지 분석") : "Mock 리뷰"}
           </span>
         </div>
       </section>
@@ -114,6 +120,34 @@ export function ScreenshotReviewReportView({
             <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">리뷰 대상</p>
             <h1 className="mt-1 break-words text-2xl font-semibold text-ink">{report.projectName}</h1>
             <dl className="mt-4 grid gap-2 text-sm text-ink-muted sm:grid-cols-2">
+              {isUrlReport && urlSource ? (
+                <>
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs uppercase tracking-wide">분석 방식</dt>
+                    <dd className="mt-0.5 text-ink">공개 URL</dd>
+                  </div>
+                  <div className="sm:col-span-2">
+                    <dt className="text-xs uppercase tracking-wide">분석 URL</dt>
+                    <dd className="mt-0.5 break-all text-ink">
+                      {formatUrlForDisplay(urlSource.requestedUrl)}
+                    </dd>
+                  </div>
+                  {urlSource.finalUrl !== urlSource.requestedUrl ? (
+                    <div className="sm:col-span-2">
+                      <dt className="text-xs uppercase tracking-wide">최종 접속 주소</dt>
+                      <dd className="mt-0.5 break-all text-ink">
+                        {formatUrlForDisplay(urlSource.finalUrl)}
+                      </dd>
+                    </div>
+                  ) : null}
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide">기기 유형</dt>
+                    <dd className="mt-0.5 text-ink">
+                      {SCREEN_DEVICE_LABELS[urlSource.deviceType]}
+                    </dd>
+                  </div>
+                </>
+              ) : null}
               <div>
                 <dt className="text-xs uppercase tracking-wide">검수 기준</dt>
                 <dd className="mt-0.5 text-ink">{reviewLensLabel}</dd>
@@ -281,12 +315,14 @@ export function ScreenshotReviewReportView({
         </section>
       ) : null}
 
-      <ScreenshotReviewScreensSection
-        screens={screens}
-        reviewMode={report.reviewMode}
-        onZoom={onZoom}
-        highlightedScreenId={highlightedScreenId}
-      />
+      {showScreensSection ? (
+        <ScreenshotReviewScreensSection
+          screens={screens}
+          reviewMode={report.reviewMode}
+          onZoom={onZoom}
+          highlightedScreenId={highlightedScreenId}
+        />
+      ) : null}
 
       <section aria-labelledby="screenshot-issues-heading">
         <h2 id="screenshot-issues-heading" className="mb-4 text-lg font-semibold text-ink">

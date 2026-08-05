@@ -21,6 +21,13 @@ const REVIEWER_BASE_PROMPT = `당신은 시니어 UX 디자이너입니다.
 
 각 issue는 관찰(화면에서 보이는 것) → 영향(사용자 행동·이해 문제) → 개선(UI 변경)을 포함해야 합니다.
 
+Evidence 객체 (모든 evidence 항목에 필수):
+- source: "visual" | "dom" | "visual_dom"
+- domElementId: DOM snapshot의 id 또는 null
+- visibleText: DOM에서 참조한 텍스트 또는 null
+- 이미지만 분석할 때: source는 "visual", domElementId와 visibleText는 null
+- URL+DOM 분석일 때: DOM id·텍스트를 참조하면 source를 "dom" 또는 "visual_dom"으로 설정
+
 principle 필드:
 - 화면 행동·상호작용과 명확히 연결되는 "노먼 기반 상호작용 원칙"이 있으면 key, label, rationale을 기록
 - 적용 가능한 원칙이 없으면 반드시 null
@@ -89,6 +96,13 @@ export function buildReviewerContextPrompt(input: {
   targetUser?: string;
   focusArea?: string;
   screenOrder: Array<{ screenId: string; screenName: string; order: number }>;
+  urlContext?: {
+    requestedUrl: string;
+    finalUrl: string;
+    pageTitle: string | null;
+    deviceType: "desktop" | "mobile";
+    domSnapshotJson: string;
+  };
 }): string {
   const lensLabel =
     input.reviewLens === "norman" ? "노먼 기반 리뷰" : "종합 UX 리뷰";
@@ -110,6 +124,29 @@ export function buildReviewerContextPrompt(input: {
     "- Section crop이 있는 화면: 해당 cropId 사용 (예: screen-1-crop-2)",
     "- 분할하지 않은 화면: {screenId}-overview 형식 사용 (예: screen-1-overview)",
   ];
+
+  if (input.urlContext) {
+    lines.push(
+      "",
+      "URL 페이지 컨텍스트:",
+      `요청 URL: ${input.urlContext.requestedUrl}`,
+      `최종 URL: ${input.urlContext.finalUrl}`
+    );
+    if (input.urlContext.pageTitle) {
+      lines.push(`페이지 제목: ${input.urlContext.pageTitle}`);
+    }
+    lines.push(
+      `기기 유형: ${input.urlContext.deviceType === "mobile" ? "모바일" : "데스크톱"}`,
+      "",
+      "DOM Snapshot:",
+      input.urlContext.domSnapshotJson,
+      "",
+      "DOM+이미지 분석 원칙:",
+      "- 텍스트 판독은 DOM 데이터를 우선 참고한다.",
+      "- DOM에 있지만 화면에서 보이지 않는 요소는 근거로 사용하지 않는다.",
+      "- 이미지와 DOM 정보가 충돌하면 evidence observation에 명시한다."
+    );
+  }
 
   return lines.filter((line): line is string => line !== null).join("\n");
 }

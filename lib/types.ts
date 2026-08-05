@@ -113,6 +113,9 @@ export interface ScreenshotVisualEvidence {
   locationLabel?: string;
   observation: string;
   confidence: AnalysisConfidence;
+  source?: "visual" | "dom" | "visual_dom";
+  domElementId?: string | null;
+  visibleText?: string | null;
 }
 
 export interface ScreenshotReviewStrength {
@@ -143,8 +146,17 @@ export interface ScreenshotReviewInsight {
   evidence: string[];
 }
 
+export interface UrlReviewSource {
+  requestedUrl: string;
+  finalUrl: string;
+  pageTitle: string | null;
+  deviceType: "desktop" | "mobile";
+}
+
 export interface ScreenshotReviewReport {
-  inputType: "screenshots";
+  inputType: "screenshots" | "url";
+  sourceType?: "screenshots" | "url";
+  source?: UrlReviewSource;
   analysisType?: "ai" | "mock";
   pipelineVersion?: string;
   reviewMode: ScreenshotReviewMode;

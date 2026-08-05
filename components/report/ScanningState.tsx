@@ -1,17 +1,19 @@
 "use client";
 
 import { useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { ANALYSIS_STEPS, SCREENSHOT_ANALYSIS_STEPS, type AnalysisStep } from "@/lib/analysis-steps";
+import { motion } from "framer-motion";
+import { URL_ANALYSIS_STEPS, SCREENSHOT_ANALYSIS_STEPS, type AnalysisStep } from "@/lib/analysis-steps";
 import { sortScreensByOrder } from "@/lib/screenshot-review-utils";
 import type { ReviewInputType, ScreenshotReviewContext } from "@/lib/types";
-import { cn } from "@/lib/utils";
+import { SCREEN_DEVICE_LABELS } from "@/lib/types";
+import { cn, formatUrlForDisplay } from "@/lib/utils";
 
 type StepStatus = "pending" | "active" | "done";
 
 interface ScanningStateProps {
   inputType?: ReviewInputType;
   url?: string;
+  deviceType?: "desktop" | "mobile";
   screenshotContext?: ScreenshotReviewContext;
   activeStepIndex: number;
 }
@@ -19,15 +21,17 @@ interface ScanningStateProps {
 export function ScanningState({
   inputType = "url",
   url = "",
+  deviceType = "desktop",
   screenshotContext,
   activeStepIndex,
 }: ScanningStateProps) {
   const steps =
-    inputType === "screenshots" ? SCREENSHOT_ANALYSIS_STEPS : ANALYSIS_STEPS;
+    inputType === "screenshots" ? SCREENSHOT_ANALYSIS_STEPS : URL_ANALYSIS_STEPS;
   const currentStep = steps[activeStepIndex] ?? steps[0]!;
   const sortedScreens = screenshotContext
     ? sortScreensByOrder(screenshotContext.screens)
     : [];
+  const displayUrl = url ? formatUrlForDisplay(url) : "";
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col items-center px-4 py-16 text-center sm:px-6 sm:py-20">
@@ -37,7 +41,7 @@ export function ScanningState({
           activeStepIndex={activeStepIndex}
         />
       ) : (
-        <UrlCaptureFrames activeStepIndex={activeStepIndex} steps={steps} />
+        <UrlCaptureFrame deviceType={deviceType} activeStepIndex={activeStepIndex} />
       )}
 
       {inputType === "screenshots" ? (
@@ -52,10 +56,10 @@ export function ScanningState({
         </>
       ) : (
         <>
-          <p className="mt-8 max-w-xs truncate font-mono text-xs text-ink-faint">{url}</p>
-          <h1 className="mt-2 text-xl font-semibold text-ink">웹사이트를 캡처하고 있어요</h1>
+          <p className="mt-8 max-w-md truncate font-mono text-xs text-ink-faint">{displayUrl}</p>
+          <h1 className="mt-2 text-xl font-semibold text-ink">공개 페이지를 분석하고 있어요</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            데스크톱·모바일 화면을 수집한 뒤 데모 리포트를 준비합니다.
+            {SCREEN_DEVICE_LABELS[deviceType]} 화면을 캡처한 뒤 AI UX 리뷰를 생성합니다.
           </p>
         </>
       )}
@@ -64,7 +68,7 @@ export function ScanningState({
         steps={steps}
         activeStepIndex={activeStepIndex}
         currentStep={currentStep}
-        showProgressBar={inputType !== "screenshots"}
+        showProgressBar={false}
       />
     </div>
   );
@@ -186,72 +190,28 @@ function ScreenshotPreviewStrip({
   );
 }
 
-function UrlCaptureFrames({
+function UrlCaptureFrame({
+  deviceType,
   activeStepIndex,
-  steps,
 }: {
+  deviceType: "desktop" | "mobile";
   activeStepIndex: number;
-  steps: AnalysisStep[];
 }) {
-  const showDesktopFrame =
-    activeStepIndex >= steps.findIndex((step) => step.id === "desktop-screenshot");
-  const showMobileFrame =
-    activeStepIndex >= steps.findIndex((step) => step.id === "mobile-screenshot");
+  const isDesktop = deviceType === "desktop";
+  const isCapturing = activeStepIndex <= 1;
+  const isAnalyzing = activeStepIndex > 1;
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.35, ease: "easeOut" }}
-      className="flex flex-col items-center gap-6 sm:flex-row sm:items-start sm:justify-center sm:gap-8"
     >
-      <AnimatePresence mode="wait">
-        {showDesktopFrame ? (
-          <motion.div
-            key="desktop"
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-          >
-            <ScanFrame
-              kind="desktop"
-              active={steps[activeStepIndex]?.id === "desktop-screenshot"}
-              done={activeStepIndex > steps.findIndex((s) => s.id === "desktop-screenshot")}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="desktop-placeholder"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.4 }}
-            className="h-32 w-full max-w-[15rem] rounded-lg border border-dashed border-border bg-surface-alt sm:w-60"
-          />
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence mode="wait">
-        {showMobileFrame ? (
-          <motion.div
-            key="mobile"
-            initial={{ opacity: 0, scale: 0.96 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.3 }}
-          >
-            <ScanFrame
-              kind="mobile"
-              active={steps[activeStepIndex]?.id === "mobile-screenshot"}
-              done={activeStepIndex > steps.findIndex((s) => s.id === "mobile-screenshot")}
-            />
-          </motion.div>
-        ) : (
-          <motion.div
-            key="mobile-placeholder"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.4 }}
-            className="h-40 w-24 rounded-lg border border-dashed border-border bg-surface-alt"
-          />
-        )}
-      </AnimatePresence>
+      <ScanFrame
+        kind={isDesktop ? "desktop" : "mobile"}
+        active={isCapturing}
+        done={isAnalyzing}
+      />
     </motion.div>
   );
 }

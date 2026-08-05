@@ -26,8 +26,14 @@ export function buildObserverScreenPrompt(input: {
   height: number;
   screenId: string;
   cropIds: string[];
+  urlContext?: {
+    requestedUrl: string;
+    finalUrl: string;
+    pageTitle: string | null;
+    domSnapshotJson: string;
+  };
 }): string {
-  return [
+  const lines = [
     `화면 ID: ${input.screenId}`,
     `화면명: ${input.screenName}`,
     `기기 유형: ${input.deviceType}`,
@@ -38,5 +44,32 @@ export function buildObserverScreenPrompt(input: {
     "",
     "먼저 Overview로 전체 구조를 파악한 뒤, crop이 있으면 각 구간의 텍스트·요소를 확인하세요.",
     "screenId 필드에는 위 화면 ID를 그대로 사용하세요.",
-  ].join("\n");
+  ];
+
+  if (input.urlContext) {
+    lines.push(
+      "",
+      "URL 페이지 컨텍스트:",
+      `요청 URL: ${input.urlContext.requestedUrl}`,
+      `최종 URL: ${input.urlContext.finalUrl}`
+    );
+    if (input.urlContext.pageTitle) {
+      lines.push(`페이지 제목: ${input.urlContext.pageTitle}`);
+    }
+    lines.push(
+      "",
+      "DOM Snapshot (텍스트 판독 우선 참고):",
+      input.urlContext.domSnapshotJson,
+      "",
+      "원칙:",
+      "- 이미지에서 확인한 시각 구조와 DOM 구조를 함께 사용한다.",
+      "- 텍스트 판독은 DOM 데이터를 우선 참고한다.",
+      "- DOM에 있지만 화면에서 보이지 않는 요소는 근거로 사용하지 않는다.",
+      "- DOM role만 보고 실제 화면 표현을 추측하지 않는다.",
+      "- 이미지와 DOM 정보가 충돌하면 ambiguousAreas에 기록한다.",
+      "- 실제 클릭 이후 동작은 확인한 것처럼 단정하지 않는다."
+    );
+  }
+
+  return lines.filter((line): line is string => line !== null).join("\n");
 }

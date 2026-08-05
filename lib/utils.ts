@@ -39,3 +39,16 @@ export function normalizeUrl(value: string): string {
   const trimmed = value.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
+
+/** 긴 query string을 리포트·UI에 그대로 노출하지 않습니다. */
+export function formatUrlForDisplay(value: string): string {
+  try {
+    const parsed = new URL(value);
+    if (parsed.search.length > 80) {
+      return `${parsed.origin}${parsed.pathname}?…`;
+    }
+    return `${parsed.origin}${parsed.pathname}${parsed.search}`;
+  } catch {
+    return value.length > 120 ? `${value.slice(0, 117)}…` : value;
+  }
+}

@@ -24,15 +24,17 @@ import {
 } from "./sticky-overlay-capture";
 import { assertSafeCaptureUrl, normalizeCaptureUrl } from "./url-security";
 
-const NAVIGATION_TIMEOUT_MS = 30_000;
-const LOAD_STATE_TIMEOUT_MS = 10_000;
-const STABILIZE_WAIT_MS = 1_500;
+import {
+  CAPTURE_DESKTOP_VIEWPORT,
+  CAPTURE_LOAD_STATE_TIMEOUT_MS,
+  CAPTURE_LOCALE,
+  CAPTURE_NAVIGATION_TIMEOUT_MS,
+  CAPTURE_STABILIZE_WAIT_MS,
+  CAPTURE_TIMEZONE,
+} from "@/lib/capture/capture-config";
+
 const VIEWPORT_SETTLE_MS = 300;
 const SEGMENT_SETTLE_MS = 200;
-
-const DESKTOP_VIEWPORT = { width: 1440, height: 900 };
-const LOCALE = "ko-KR";
-const TIMEZONE = "Asia/Seoul";
 
 type ProgressCallback = (step: CaptureProgressStep) => void;
 
@@ -126,16 +128,16 @@ async function navigateSafely(page: Page, url: string): Promise<string> {
   try {
     const response = await page.goto(url, {
       waitUntil: "domcontentloaded",
-      timeout: NAVIGATION_TIMEOUT_MS,
+      timeout: CAPTURE_NAVIGATION_TIMEOUT_MS,
     });
 
     try {
-      await page.waitForLoadState("load", { timeout: LOAD_STATE_TIMEOUT_MS });
+      await page.waitForLoadState("load", { timeout: CAPTURE_LOAD_STATE_TIMEOUT_MS });
     } catch {
       /* 일부 사이트는 load 이벤트가 늦을 수 있어 domcontentloaded 이후 진행 */
     }
 
-    await page.waitForTimeout(STABILIZE_WAIT_MS);
+    await page.waitForTimeout(CAPTURE_STABILIZE_WAIT_MS);
 
     const finalUrl = page.url();
     assertSafeCaptureUrl(finalUrl);
@@ -144,7 +146,7 @@ async function navigateSafely(page: Page, url: string): Promise<string> {
       throw new CaptureError("UNREACHABLE", "사이트에 접속할 수 없어요.", 502);
     }
 
-    if (Date.now() - startedAt > NAVIGATION_TIMEOUT_MS + LOAD_STATE_TIMEOUT_MS) {
+    if (Date.now() - startedAt > CAPTURE_NAVIGATION_TIMEOUT_MS + CAPTURE_LOAD_STATE_TIMEOUT_MS) {
       throw new CaptureError(
         "SLOW_LOADING",
         "페이지 로딩이 너무 오래 걸려요. 잠시 후 다시 시도해주세요.",
@@ -163,9 +165,9 @@ async function navigateSafely(page: Page, url: string): Promise<string> {
 function createDesktopContext(browser: Browser): Promise<BrowserContext> {
   return browser.newContext({
     ...devices["Desktop Chrome"],
-    viewport: DESKTOP_VIEWPORT,
-    locale: LOCALE,
-    timezoneId: TIMEZONE,
+    viewport: CAPTURE_DESKTOP_VIEWPORT,
+    locale: CAPTURE_LOCALE,
+    timezoneId: CAPTURE_TIMEZONE,
     ignoreHTTPSErrors: false,
   });
 }
@@ -173,8 +175,8 @@ function createDesktopContext(browser: Browser): Promise<BrowserContext> {
 function createMobileContext(browser: Browser): Promise<BrowserContext> {
   return browser.newContext({
     ...devices["iPhone 13"],
-    locale: LOCALE,
-    timezoneId: TIMEZONE,
+    locale: CAPTURE_LOCALE,
+    timezoneId: CAPTURE_TIMEZONE,
     ignoreHTTPSErrors: false,
   });
 }
@@ -191,7 +193,7 @@ async function captureFirstViewport(
       await page.screenshot({
         fullPage: false,
         type: "png",
-        timeout: NAVIGATION_TIMEOUT_MS,
+        timeout: CAPTURE_NAVIGATION_TIMEOUT_MS,
         animations: "disabled",
       })
     );
@@ -228,7 +230,7 @@ async function captureViewportAtScroll(
     const buffer = await page.screenshot({
       fullPage: false,
       type: "png",
-      timeout: NAVIGATION_TIMEOUT_MS,
+      timeout: CAPTURE_NAVIGATION_TIMEOUT_MS,
       animations: "disabled",
     });
 
@@ -310,7 +312,7 @@ async function captureDeviceScreenshot(
     const buffer = await page.screenshot({
       fullPage: true,
       type: "png",
-      timeout: NAVIGATION_TIMEOUT_MS,
+      timeout: CAPTURE_NAVIGATION_TIMEOUT_MS,
       animations: "disabled",
     });
 
@@ -354,8 +356,8 @@ function desktopMeta(requestedUrl: string): ContextCaptureMeta {
   const preset = devices["Desktop Chrome"];
   return {
     requestedUrl,
-    viewportWidth: DESKTOP_VIEWPORT.width,
-    viewportHeight: DESKTOP_VIEWPORT.height,
+    viewportWidth: CAPTURE_DESKTOP_VIEWPORT.width,
+    viewportHeight: CAPTURE_DESKTOP_VIEWPORT.height,
     deviceScaleFactor: preset.deviceScaleFactor ?? 1,
     isMobile: preset.isMobile ?? false,
     hasTouch: preset.hasTouch ?? false,

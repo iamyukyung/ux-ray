@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+  fieldset {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+
+  legend {
+    padding: 0;
+  }
+}
+
 :root {
   /* Surfaces */
   --color-bg: 250 250 249;
@@ -52,6 +65,19 @@ body {
 ::selection {
   background-color: rgb(var(--color-accent-soft));
   color: rgb(var(--color-accent-strong));
+}
+
+/* Tailwind sr-only 유틸과 동일 — 유틸리티 로드 전 접근성 숨김 보조 */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border-width: 0;
 }
 
 /* Visible, consistent keyboard focus ring for accessibility */

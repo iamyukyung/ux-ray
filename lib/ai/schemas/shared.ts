@@ -18,6 +18,9 @@ export const VisualEvidenceSchema = z.object({
   locationLabel: z.string().min(1),
   observation: z.string().min(1),
   confidence: ConfidenceSchema,
+  source: z.enum(["visual", "dom", "visual_dom"]),
+  domElementId: z.string().nullable(),
+  visibleText: z.string().nullable(),
 });
 
 export type VisualEvidence = z.infer<typeof VisualEvidenceSchema>;

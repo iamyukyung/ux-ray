@@ -12,6 +12,16 @@ export const ANALYSIS_STEPS: AnalysisStep[] = [
   { id: "demo-report", label: "Demo Report 생성" },
 ];
 
+/** URL 기반 AI UX 리뷰 분석 단계 */
+export const URL_ANALYSIS_STEPS: AnalysisStep[] = [
+  { id: "connect-page", label: "페이지에 접속하고 있어요" },
+  { id: "collect-structure", label: "화면과 콘텐츠 구조를 수집하고 있어요" },
+  { id: "understand-purpose", label: "페이지의 목적과 흐름을 이해하고 있어요" },
+  { id: "review-issues", label: "UX 개선 포인트를 검토하고 있어요" },
+  { id: "verify-evidence", label: "근거와 우선순위를 확인하고 있어요" },
+  { id: "compose-report", label: "리뷰를 정리하고 있어요" },
+];
+
 /** 이미지 기반 AI 리뷰 분석 단계 — Pipeline 2.0 */
 export const SCREENSHOT_ANALYSIS_STEPS: AnalysisStep[] = [
   { id: "observe-structure", label: "화면 구조를 자세히 확인하고 있어요" },
