@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(identify \"test-images/Desktop_1_메인홈_A안 스토리텔링형A.png\")",
+      "Bash(sips -g pixelWidth -g pixelHeight \"test-images/Desktop_1_메인홈_A안 스토리텔링형A.png\")",
+      "Bash(nohup npm run dev)",
+      "Bash(echo \"started pid $!\")",
+      "Bash(disown)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(lsof -i :3000 -sTCP:LISTEN)"
     ]
   }
 }
