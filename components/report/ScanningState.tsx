@@ -2,9 +2,13 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { URL_ANALYSIS_STEPS, SCREENSHOT_ANALYSIS_STEPS, type AnalysisStep } from "@/lib/analysis-steps";
+import {
+  getScreenshotAnalysisSteps,
+  getUrlAnalysisSteps,
+  type AnalysisStep,
+} from "@/lib/analysis-steps";
 import { sortScreensByOrder } from "@/lib/screenshot-review-utils";
-import type { ReviewInputType, ScreenshotReviewContext } from "@/lib/types";
+import type { ReviewInputType, ReviewMode, ScreenshotReviewContext } from "@/lib/types";
 import { SCREEN_DEVICE_LABELS } from "@/lib/types";
 import { cn, formatUrlForDisplay } from "@/lib/utils";
 
@@ -12,6 +16,7 @@ type StepStatus = "pending" | "active" | "done";
 
 interface ScanningStateProps {
   inputType?: ReviewInputType;
+  reviewMode?: ReviewMode;
   url?: string;
   deviceType?: "desktop" | "mobile";
   screenshotContext?: ScreenshotReviewContext;
@@ -20,13 +25,16 @@ interface ScanningStateProps {
 
 export function ScanningState({
   inputType = "url",
+  reviewMode = "quick",
   url = "",
   deviceType = "desktop",
   screenshotContext,
   activeStepIndex,
 }: ScanningStateProps) {
   const steps =
-    inputType === "screenshots" ? SCREENSHOT_ANALYSIS_STEPS : URL_ANALYSIS_STEPS;
+    inputType === "screenshots"
+      ? getScreenshotAnalysisSteps(reviewMode)
+      : getUrlAnalysisSteps(reviewMode);
   const currentStep = steps[activeStepIndex] ?? steps[0]!;
   const sortedScreens = screenshotContext
     ? sortScreensByOrder(screenshotContext.screens)

@@ -1,14 +1,21 @@
 import type { PipelineStage } from "@/lib/ai/pipeline/pipeline-stage";
 import type { ScreenshotReviewAnalysisResult } from "@/lib/ai/screenshot-review-server";
-import { SCREENSHOT_ANALYSIS_STEPS } from "@/lib/analysis-steps";
+import {
+  getScreenshotAnalysisSteps,
+  getUrlAnalysisSteps,
+} from "@/lib/analysis-steps";
+import type { ReviewMode } from "@/lib/types";
 
 export type ScreenshotReviewJobStatus = "processing" | "done" | "error";
+export type ScreenshotReviewJobInputType = "url" | "screenshots";
 
 export interface ScreenshotReviewJob {
   id: string;
   status: ScreenshotReviewJobStatus;
   stage: PipelineStage;
   stepIndex: number;
+  reviewMode: ReviewMode;
+  inputType?: ScreenshotReviewJobInputType;
   createdAt: number;
   updatedAt: number;
   result?: ScreenshotReviewAnalysisResult;
@@ -20,7 +27,6 @@ export interface ScreenshotReviewJob {
 }
 
 const JOB_TTL_MS = 30 * 60 * 1000;
-const LAST_STEP_INDEX = SCREENSHOT_ANALYSIS_STEPS.length - 1;
 
 /**
  * 스크린샷·URL AI 리뷰 공용 비동기 job store.
@@ -31,7 +37,7 @@ const LAST_STEP_INDEX = SCREENSHOT_ANALYSIS_STEPS.length - 1;
  * If Critic requests a rewrite, reviewer-request/parse can fire a second time;
  * updateScreenshotReviewJobStage clamps stepIndex so it never moves backward.
  */
-const STAGE_STEP_INDEX: Record<PipelineStage, number> = {
+const PRECISE_STAGE_STEP_INDEX: Record<PipelineStage, number> = {
   "request-validation": 0,
   "image-metadata": 0,
   "image-preprocessing": 0,
@@ -44,6 +50,36 @@ const STAGE_STEP_INDEX: Record<PipelineStage, number> = {
   "critic-parse": 3,
   "report-assembly": 4,
 };
+
+const QUICK_STAGE_STEP_INDEX: Record<PipelineStage, number> = {
+  "request-validation": 0,
+  "image-metadata": 0,
+  "image-preprocessing": 0,
+  "image-cropping": 0,
+  "observer-request": 0,
+  "observer-parse": 0,
+  "reviewer-request": 1,
+  "reviewer-parse": 1,
+  "critic-request": 1,
+  "critic-parse": 1,
+  "report-assembly": 2,
+};
+
+function lastStepIndex(
+  reviewMode: ReviewMode,
+  inputType: ScreenshotReviewJobInputType = "screenshots"
+): number {
+  const steps =
+    inputType === "url"
+      ? getUrlAnalysisSteps(reviewMode)
+      : getScreenshotAnalysisSteps(reviewMode);
+  return steps.length - 1;
+}
+
+function stageStepIndex(reviewMode: ReviewMode, stage: PipelineStage): number {
+  const map = reviewMode === "quick" ? QUICK_STAGE_STEP_INDEX : PRECISE_STAGE_STEP_INDEX;
+  return map[stage] ?? 0;
+}
 
 /**
  * Next.js 개발 서버는 라우트별로 별도 모듈 그래프를 컴파일할 수 있어,
@@ -69,7 +105,13 @@ function sweepExpiredJobs(now: number): void {
   }
 }
 
-export function createScreenshotReviewJob(id: string): ScreenshotReviewJob {
+export function createScreenshotReviewJob(
+  id: string,
+  options?: {
+    reviewMode?: ReviewMode;
+    inputType?: ScreenshotReviewJobInputType;
+  }
+): ScreenshotReviewJob {
   const now = Date.now();
   sweepExpiredJobs(now);
 
@@ -78,6 +120,8 @@ export function createScreenshotReviewJob(id: string): ScreenshotReviewJob {
     status: "processing",
     stage: "request-validation",
     stepIndex: 0,
+    reviewMode: options?.reviewMode ?? "quick",
+    inputType: options?.inputType,
     createdAt: now,
     updatedAt: now,
   };
@@ -90,7 +134,7 @@ export function updateScreenshotReviewJobStage(id: string, stage: PipelineStage)
   if (!job || job.status !== "processing") return;
 
   job.stage = stage;
-  job.stepIndex = Math.max(job.stepIndex, STAGE_STEP_INDEX[stage] ?? 0);
+  job.stepIndex = Math.max(job.stepIndex, stageStepIndex(job.reviewMode, stage));
   job.updatedAt = Date.now();
 }
 
@@ -102,7 +146,10 @@ export function completeScreenshotReviewJob(
   if (!job) return;
 
   job.status = "done";
-  job.stepIndex = Math.max(job.stepIndex, LAST_STEP_INDEX);
+  job.stepIndex = Math.max(
+    job.stepIndex,
+    lastStepIndex(job.reviewMode, job.inputType ?? "screenshots")
+  );
   job.result = result;
   job.updatedAt = Date.now();
 }

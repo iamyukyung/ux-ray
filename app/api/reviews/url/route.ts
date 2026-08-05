@@ -37,14 +37,20 @@ async function runUrlReviewJob(reviewId: string, body: unknown, requestId: strin
     return;
   }
 
+  const reviewMode = parsed.value.reviewMode ?? "quick";
   setScreenshotReviewJobStepIndex(reviewId, 0);
   const tracker = createStageTracker("request-validation");
   tracker.onStageChange = (stage) => {
     updateScreenshotReviewJobStage(reviewId, stage);
-    if (stage === "observer-request") setScreenshotReviewJobStepIndex(reviewId, 2);
-    if (stage === "reviewer-request") setScreenshotReviewJobStepIndex(reviewId, 3);
-    if (stage === "critic-request") setScreenshotReviewJobStepIndex(reviewId, 4);
-    if (stage === "report-assembly") setScreenshotReviewJobStepIndex(reviewId, 5);
+    if (reviewMode === "precise") {
+      if (stage === "observer-request") setScreenshotReviewJobStepIndex(reviewId, 2);
+      if (stage === "reviewer-request") setScreenshotReviewJobStepIndex(reviewId, 3);
+      if (stage === "critic-request") setScreenshotReviewJobStepIndex(reviewId, 4);
+      if (stage === "report-assembly") setScreenshotReviewJobStepIndex(reviewId, 5);
+    } else {
+      if (stage === "reviewer-request") setScreenshotReviewJobStepIndex(reviewId, 1);
+      if (stage === "report-assembly") setScreenshotReviewJobStepIndex(reviewId, 2);
+    }
   };
 
   const result = await analyzeUrlWithOpenAI(parsed.value, requestId, {
@@ -92,7 +98,10 @@ export async function POST(request: Request): Promise<Response> {
 
   const requestId = randomUUID();
   const reviewId = requestId;
-  createScreenshotReviewJob(reviewId);
+  createScreenshotReviewJob(reviewId, {
+    reviewMode: parsed.value.reviewMode ?? "quick",
+    inputType: "url",
+  });
 
   void runUrlReviewJob(reviewId, body, requestId);
 

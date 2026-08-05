@@ -7,6 +7,9 @@ export type ScreenDeviceType = DeviceType;
 
 export type ScreenshotReviewMode = "single-screen" | "user-flow";
 
+/** AI 리뷰 깊이 — 빠른(1회) / 정밀(다단계) */
+export type ReviewMode = "quick" | "precise";
+
 export type ReviewLens = "general" | "norman";
 
 export type NormanPrincipleKey =
@@ -43,7 +46,10 @@ export interface ScreenshotReviewContext {
   targetUser?: string;
   focusArea?: string;
   reviewLens?: ReviewLens;
-  reviewMode: ScreenshotReviewMode;
+  /** 빠른 / 정밀 리뷰 (기본 quick) */
+  reviewMode?: ReviewMode;
+  /** 단일 화면 / 사용자 흐름 — 화면 수에서 자동 결정 */
+  screenLayoutMode: ScreenshotReviewMode;
   screens: UploadedScreen[];
 }
 
@@ -195,7 +201,10 @@ export interface ScreenshotReviewReport {
   source?: UrlReviewSource;
   analysisType?: "ai" | "mock";
   pipelineVersion?: string;
-  reviewMode: ScreenshotReviewMode;
+  /** 빠른 / 정밀 — 없으면 정밀 리뷰로 간주 */
+  reviewMode?: ReviewMode;
+  /** 단일 화면 / 사용자 흐름 */
+  screenLayoutMode?: ScreenshotReviewMode;
   reviewLens?: ReviewLens;
   createdAt: string;
   projectName?: string;
@@ -210,7 +219,8 @@ export interface ScreenshotReviewReport {
   strengths?: ScreenshotReviewStrength[];
   issues: ScreenshotReviewIssue[];
   limitations?: string[];
-  quality?: ScreenshotReviewQuality;
+  /** 빠른 리뷰는 null — 가짜 점수를 생성하지 않습니다 */
+  quality?: ScreenshotReviewQuality | null;
   cropMetadata?: ScreenCropMetadata[];
   screenAssets?: ReportScreenAssetRef[];
 }
@@ -242,6 +252,24 @@ export interface ScreenshotReviewDebugInfo {
     principleTaggedIssueCount?: number;
   };
 }
+
+export const REVIEW_DEPTH_META: Record<
+  ReviewMode,
+  { inputLabel: string; reportLabel: string; description: string; hint: string }
+> = {
+  quick: {
+    inputLabel: "빠른 리뷰",
+    reportLabel: "빠른 리뷰",
+    description: "핵심 UX 문제와 개선안을 빠르게 확인해요.",
+    hint: "대부분의 화면에 권장",
+  },
+  precise: {
+    inputLabel: "정밀 리뷰",
+    reportLabel: "정밀 리뷰",
+    description: "화면 구조 분석과 독립 검수까지 거쳐 더 꼼꼼하게 확인해요.",
+    hint: "중요한 출시 전 검토에 적합",
+  },
+};
 
 export const REVIEW_LENS_META: Record<
   ReviewLens,

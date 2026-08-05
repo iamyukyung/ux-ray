@@ -32,8 +32,8 @@ function buildDeviceSummary(screens: ScreenshotReviewMetadata["screens"]): strin
   return parts.join(", ");
 }
 
-function defaultProjectName(reviewMode: ScreenshotReviewMetadata["reviewMode"]): string {
-  return reviewMode === "single-screen" ? "업로드 화면 UX 리뷰" : "업로드 사용자 흐름 UX 리뷰";
+function defaultProjectName(screenLayoutMode: ScreenshotReviewMetadata["screenLayoutMode"]): string {
+  return screenLayoutMode === "single-screen" ? "업로드 화면 UX 리뷰" : "업로드 사용자 흐름 UX 리뷰";
 }
 
 function toScreenReferences(
@@ -142,9 +142,12 @@ export function assemblePipelineReport(input: {
     analysisType: "ai",
     pipelineVersion: PIPELINE_VERSION,
     reviewMode: input.metadata.reviewMode,
+    screenLayoutMode: input.metadata.screenLayoutMode,
     reviewLens: input.metadata.reviewLens,
     createdAt: new Date().toISOString(),
-    projectName: input.metadata.projectName ?? defaultProjectName(input.metadata.reviewMode),
+    projectName:
+      input.metadata.projectName ??
+      defaultProjectName(input.metadata.screenLayoutMode),
     userGoal: input.metadata.userGoal,
     targetUser: input.metadata.targetUser,
     focusArea: input.metadata.focusArea,

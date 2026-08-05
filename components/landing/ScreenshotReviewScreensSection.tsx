@@ -1,23 +1,23 @@
 "use client";
 
-import type { ScreenshotReviewReport, UploadedScreen } from "@/lib/types";
+import type { ScreenshotReviewMode, ScreenshotReviewReport, UploadedScreen } from "@/lib/types";
 import { SCREEN_DEVICE_LABELS } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface ScreenshotReviewScreensSectionProps {
   screens: UploadedScreen[];
-  reviewMode: ScreenshotReviewReport["reviewMode"];
+  screenLayoutMode: ScreenshotReviewMode;
   onZoom: (screen: UploadedScreen) => void;
   highlightedScreenId?: string | null;
 }
 
 export function ScreenshotReviewScreensSection({
   screens,
-  reviewMode,
+  screenLayoutMode,
   onZoom,
   highlightedScreenId,
 }: ScreenshotReviewScreensSectionProps) {
-  const isFlow = reviewMode === "user-flow" && screens.length > 1;
+  const isFlow = screenLayoutMode === "user-flow" && screens.length > 1;
 
   return (
     <section aria-labelledby="screenshot-screens-heading" className="rounded-xl border border-border bg-surface p-6 shadow-panel sm:p-8">

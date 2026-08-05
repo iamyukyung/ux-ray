@@ -25,12 +25,22 @@ const ALLOWED_REASONING_EFFORTS = new Set<string>([
   "max",
 ]);
 
-export const PIPELINE_VERSION = "2.0" as const;
+export const PIPELINE_VERSION = "3.0" as const;
+export const LEGACY_PIPELINE_VERSION = "2.0" as const;
 
-const TIMEOUT_MIN_MS = 60_000;
-const TIMEOUT_MAX_MS = 600_000;
-const DEFAULT_TIMEOUT_DEV_MS = 420_000;
-const DEFAULT_TIMEOUT_PROD_MS = 240_000;
+const QUICK_TIMEOUT_MIN_MS = 60_000;
+const QUICK_TIMEOUT_MAX_MS = 300_000;
+const QUICK_TIMEOUT_DEFAULT_MS = 180_000;
+
+const PRECISE_TIMEOUT_MIN_MS = 120_000;
+const PRECISE_TIMEOUT_MAX_MS = 600_000;
+const PRECISE_TIMEOUT_DEFAULT_DEV_MS = 420_000;
+const PRECISE_TIMEOUT_DEFAULT_PROD_MS = 240_000;
+
+const TIMEOUT_MIN_MS = PRECISE_TIMEOUT_MIN_MS;
+const TIMEOUT_MAX_MS = PRECISE_TIMEOUT_MAX_MS;
+const DEFAULT_TIMEOUT_DEV_MS = PRECISE_TIMEOUT_DEFAULT_DEV_MS;
+const DEFAULT_TIMEOUT_PROD_MS = PRECISE_TIMEOUT_DEFAULT_PROD_MS;
 
 /** Next.js route segment config requires a static literal (max env timeout + 15s buffer). */
 export const SCREENSHOT_REVIEW_ROUTE_MAX_DURATION = 615;
@@ -80,6 +90,45 @@ function resolveReasoningEffort(
   return fallback;
 }
 
+export function getQuickReviewTimeoutMs(): number {
+  const configured = process.env.QUICK_REVIEW_TIMEOUT_MS?.trim();
+  if (configured) {
+    const parsed = Number.parseInt(configured, 10);
+    if (
+      Number.isFinite(parsed) &&
+      parsed >= QUICK_TIMEOUT_MIN_MS &&
+      parsed <= QUICK_TIMEOUT_MAX_MS
+    ) {
+      return parsed;
+    }
+  }
+  return QUICK_TIMEOUT_DEFAULT_MS;
+}
+
+export function getPreciseReviewTimeoutMs(): number {
+  const configured = process.env.PRECISE_REVIEW_TIMEOUT_MS?.trim();
+  if (configured) {
+    const parsed = Number.parseInt(configured, 10);
+    if (
+      Number.isFinite(parsed) &&
+      parsed >= PRECISE_TIMEOUT_MIN_MS &&
+      parsed <= PRECISE_TIMEOUT_MAX_MS
+    ) {
+      return parsed;
+    }
+  }
+
+  return process.env.NODE_ENV === "development"
+    ? PRECISE_TIMEOUT_DEFAULT_DEV_MS
+    : PRECISE_TIMEOUT_DEFAULT_PROD_MS;
+}
+
+/** quick / precise 리뷰 타임아웃 */
+export function getReviewTimeoutMs(reviewMode: import("@/lib/types").ReviewMode): number {
+  return reviewMode === "quick" ? getQuickReviewTimeoutMs() : getPreciseReviewTimeoutMs();
+}
+
+/** @deprecated getReviewTimeoutMs() 사용 */
 export function getScreenshotReviewTimeoutMs(): number {
   const configured = process.env.SCREENSHOT_REVIEW_TIMEOUT_MS?.trim();
   if (configured) {
@@ -89,9 +138,7 @@ export function getScreenshotReviewTimeoutMs(): number {
     }
   }
 
-  return process.env.NODE_ENV === "development"
-    ? DEFAULT_TIMEOUT_DEV_MS
-    : DEFAULT_TIMEOUT_PROD_MS;
+  return getPreciseReviewTimeoutMs();
 }
 
 export function getRouteMaxDurationSeconds(): number {

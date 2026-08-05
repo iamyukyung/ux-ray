@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { URL_ANALYSIS_STEPS } from "@/lib/analysis-steps";
+import { getUrlAnalysisSteps } from "@/lib/analysis-steps";
 import {
   createUrlReview,
   UrlReviewRequestError,
@@ -15,6 +15,7 @@ import {
   UploadedImageZoomModal,
   type ZoomCropHighlight,
 } from "@/components/landing/UploadedImageZoomModal";
+import { ReviewOptionCardFieldset } from "@/components/landing/ReviewOptionCardFieldset";
 import { Button } from "@/components/ui/Button";
 import {
   clearUrlReviewClientData,
@@ -22,11 +23,12 @@ import {
 } from "@/lib/url-review-assets";
 import type {
   ReviewLens,
+  ReviewMode,
   ScreenshotReviewDebugInfo,
   ScreenshotReviewReport,
   UploadedScreen,
 } from "@/lib/types";
-import { REVIEW_LENS_META, SCREEN_DEVICE_LABELS } from "@/lib/types";
+import { REVIEW_DEPTH_META, REVIEW_LENS_META, SCREEN_DEVICE_LABELS } from "@/lib/types";
 import { cn, looksLikeUrl, normalizeUrl } from "@/lib/utils";
 
 type ReviewPhase = "edit" | "loading" | "report" | "error";
@@ -38,8 +40,22 @@ interface UrlFormFields {
   userGoal: string;
   targetUser: string;
   focusArea: string;
+  reviewMode: ReviewMode;
   reviewLens: ReviewLens;
 }
+
+const REVIEW_DEPTH_OPTIONS = (["quick", "precise"] as const).map((mode) => ({
+  value: mode,
+  label: REVIEW_DEPTH_META[mode].inputLabel,
+  description: REVIEW_DEPTH_META[mode].description,
+  hint: REVIEW_DEPTH_META[mode].hint,
+}));
+
+const REVIEW_LENS_OPTIONS = (["general", "norman"] as const).map((lens) => ({
+  value: lens,
+  label: REVIEW_LENS_META[lens].inputLabel,
+  description: REVIEW_LENS_META[lens].description,
+}));
 
 const EMPTY_FIELDS: UrlFormFields = {
   url: "",
@@ -48,6 +64,7 @@ const EMPTY_FIELDS: UrlFormFields = {
   userGoal: "",
   targetUser: "",
   focusArea: "",
+  reviewMode: "quick",
   reviewLens: "general",
 };
 
@@ -146,6 +163,7 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
         {
           url: normalizeUrl(fields.url),
           deviceType: fields.deviceType,
+          reviewMode: fields.reviewMode,
           reviewLens: fields.reviewLens,
           projectName: fields.projectName.trim() || undefined,
           userGoal: fields.userGoal.trim() || undefined,
@@ -158,12 +176,12 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
         }
       );
 
-      setActiveStepIndex(URL_ANALYSIS_STEPS.length - 1);
+      setActiveStepIndex(getUrlAnalysisSteps(fields.reviewMode).length - 1);
       await delay(300);
 
       const normalizedUrl = normalizeUrl(fields.url);
       router.push(
-        `/review/${response.reviewId}?input=url&url=${encodeURIComponent(normalizedUrl)}&deviceType=${fields.deviceType}`
+        `/review/${response.reviewId}?input=url&url=${encodeURIComponent(normalizedUrl)}&deviceType=${fields.deviceType}&reviewMode=${fields.reviewMode}`
       );
     } catch (error) {
       if (error instanceof UrlReviewRequestError) {
@@ -229,6 +247,7 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
     return (
       <ScanningState
         inputType="url"
+        reviewMode={fields.reviewMode}
         url={normalizeUrl(fields.url)}
         deviceType={fields.deviceType}
         activeStepIndex={activeStepIndex}
@@ -333,43 +352,21 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
           </div>
         </fieldset>
 
-        <fieldset className="min-w-0 border-0 p-0">
-          <legend className="mb-1.5 block text-sm font-medium text-ink">검수 기준</legend>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {(["general", "norman"] as const).map((lens) => {
-              const meta = REVIEW_LENS_META[lens];
-              const selected = fields.reviewLens === lens;
+        <ReviewOptionCardFieldset
+          legend="리뷰 방식"
+          name="urlReviewMode"
+          value={fields.reviewMode}
+          options={REVIEW_DEPTH_OPTIONS}
+          onChange={(value) => updateField("reviewMode", value as ReviewMode)}
+        />
 
-              return (
-                <label
-                  key={lens}
-                  className={cn(
-                    "flex cursor-pointer flex-col rounded-lg border p-4 transition-colors",
-                    selected
-                      ? "border-accent bg-accent/5 ring-1 ring-accent/30"
-                      : "border-border bg-surface hover:border-accent/40"
-                  )}
-                >
-                  <span className="flex items-start gap-3">
-                    <input
-                      type="radio"
-                      value={lens}
-                      checked={selected}
-                      onChange={() => updateField("reviewLens", lens)}
-                      className="mt-1 h-4 w-4 flex-shrink-0 accent-accent"
-                    />
-                    <span className="min-w-0">
-                      <span className="block text-sm font-semibold text-ink">{meta.inputLabel}</span>
-                      <span className="mt-1 block text-sm leading-relaxed text-ink-muted">
-                        {meta.description}
-                      </span>
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
-          </div>
-        </fieldset>
+        <ReviewOptionCardFieldset
+          legend="검수 기준"
+          name="urlReviewLens"
+          value={fields.reviewLens}
+          options={REVIEW_LENS_OPTIONS}
+          onChange={(value) => updateField("reviewLens", value as ReviewLens)}
+        />
 
         <section aria-labelledby="url-review-context-heading" className="space-y-4">
           <div>

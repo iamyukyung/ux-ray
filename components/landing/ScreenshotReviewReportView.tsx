@@ -14,7 +14,12 @@ import { Button } from "@/components/ui/Button";
 import { scaleEvidenceCropForUrlReport } from "@/lib/url-review-assets";
 import { screenshotInsightToAiInsight } from "@/lib/screenshot-report-utils";
 import { formatScreenReferenceLabel } from "@/lib/screenshot-report-utils";
-import { getReviewModeLabel } from "@/lib/screenshot-review-utils";
+import { getReviewModeLabel, getScreenLayoutModeLabel } from "@/lib/screenshot-review-utils";
+import {
+  resolveReportReviewMode,
+  resolveReportScreenLayoutMode,
+  getReviewDepthLabel,
+} from "@/lib/review-mode-utils";
 import {
   ANALYSIS_CONFIDENCE_LABELS,
   REVIEW_LENS_META,
@@ -53,6 +58,10 @@ export function ScreenshotReviewReportView({
   const limitations = report.limitations ?? [];
   const reviewLens = report.reviewLens ?? "general";
   const reviewLensLabel = REVIEW_LENS_META[reviewLens].reportLabel;
+  const reviewDepth = resolveReportReviewMode(report);
+  const reviewDepthLabel = getReviewDepthLabel(reviewDepth);
+  const screenLayoutMode = resolveReportScreenLayoutMode(report);
+  const screenLayoutLabel = getScreenLayoutModeLabel(screenLayoutMode, report.screenCount);
   const isUrlReport = report.sourceType === "url" || report.inputType === "url";
   const urlSource = report.source;
   const showScreensSection = !isUrlReport && screens.length > 0;
@@ -87,7 +96,7 @@ export function ScreenshotReviewReportView({
           Source: {debug.source} · Request ID: {debug.requestId}
           {debug.pipelineVersion ? ` · Pipeline: ${debug.pipelineVersion}` : null}
           {debug.diagnostics
-            ? ` · Crops: ${debug.diagnostics.cropCount} · Rewritten: ${debug.diagnostics.wasRewritten ? "yes" : "no"} · Quality: ${debug.diagnostics.qualityScores.specificity}/${debug.diagnostics.qualityScores.evidenceQuality}/${debug.diagnostics.qualityScores.nonHallucination}`
+            ? ` · Crops: ${debug.diagnostics.cropCount} · Rewritten: ${debug.diagnostics.wasRewritten ? "yes" : "no"}${debug.diagnostics.qualityScores ? ` · Quality: ${debug.diagnostics.qualityScores.specificity}/${debug.diagnostics.qualityScores.evidenceQuality}/${debug.diagnostics.qualityScores.nonHallucination}` : ""}`
             : null}
           {" · "}AI issues: {debug.aiIssueCount} · Rendered: {debug.renderedIssueCount}
         </p>
@@ -165,10 +174,12 @@ export function ScreenshotReviewReportView({
                 <dd className="mt-0.5 text-ink">{reviewLensLabel}</dd>
               </div>
               <div>
-                <dt className="text-xs uppercase tracking-wide">리뷰 유형</dt>
-                <dd className="mt-0.5 text-ink">
-                  {getReviewModeLabel(report.reviewMode, report.screenCount)}
-                </dd>
+                <dt className="text-xs uppercase tracking-wide">리뷰 방식</dt>
+                <dd className="mt-0.5 text-ink">{reviewDepthLabel}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide">화면 유형</dt>
+                <dd className="mt-0.5 text-ink">{screenLayoutLabel}</dd>
               </div>
               <div>
                 <dt className="text-xs uppercase tracking-wide">화면 수</dt>
@@ -345,7 +356,7 @@ export function ScreenshotReviewReportView({
       {showScreensSection ? (
         <ScreenshotReviewScreensSection
           screens={screens}
-          reviewMode={report.reviewMode}
+          screenLayoutMode={screenLayoutMode}
           onZoom={onZoom}
           highlightedScreenId={highlightedScreenId}
         />

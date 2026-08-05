@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { URL_ANALYSIS_STEPS } from "@/lib/analysis-steps";
+import { getScreenshotAnalysisSteps, getUrlAnalysisSteps } from "@/lib/analysis-steps";
 import { ScanningState } from "@/components/report/ScanningState";
 import { ReportErrorState } from "@/components/report/ReportErrorState";
 import { ReportEmptyState } from "@/components/report/ReportEmptyState";
@@ -25,7 +25,6 @@ import {
   CaptureRequestError,
   requestCapture,
 } from "@/lib/capture-client";
-import { SCREENSHOT_ANALYSIS_STEPS } from "@/lib/analysis-steps";
 import { getMockReview, isMockReviewId } from "@/lib/mock-review";
 import {
   pollUrlReviewById,
@@ -39,6 +38,7 @@ import { SCREENSHOT_MOCK_STEP_DELAY_MS } from "@/lib/screenshot-review-utils";
 import type { CaptureProgressStep, CaptureResult } from "@/lib/capture-types";
 import type {
   ReviewInputType,
+  ReviewMode,
   ReviewReport,
   ScreenshotReviewContext,
   ScreenshotReviewDebugInfo,
@@ -59,6 +59,8 @@ export function ReviewClient({ reportId }: { reportId: string }) {
   const requestedUrl = searchParams.get("url") ?? "입력한 웹사이트";
   const deviceType =
     searchParams.get("deviceType") === "mobile" ? "mobile" : "desktop";
+  const reviewMode: ReviewMode =
+    searchParams.get("reviewMode") === "precise" ? "precise" : "quick";
   const inputType: ReviewInputType =
     searchParams.get("input") === "screenshots" ? "screenshots" : "url";
 
@@ -102,7 +104,7 @@ export function ReviewClient({ reportId }: { reportId: string }) {
     let cancelled = false;
 
     function applyUrlReviewResponse(response: UrlReviewResponse) {
-      setActiveCaptureStep(URL_ANALYSIS_STEPS.length - 1);
+      setActiveCaptureStep(getUrlAnalysisSteps(reviewMode).length - 1);
       setAiReport(response.report);
       setAiDebug(response.debug ?? null);
       setUrlScreens(response.screens);
@@ -152,7 +154,9 @@ export function ReviewClient({ reportId }: { reportId: string }) {
     }
 
     async function runScreenshotAnalysis(context: ScreenshotReviewContext) {
-      for (let step = 0; step < SCREENSHOT_ANALYSIS_STEPS.length; step += 1) {
+      const screenshotReviewMode = context.reviewMode ?? "quick";
+      const steps = getScreenshotAnalysisSteps(screenshotReviewMode);
+      for (let step = 0; step < steps.length; step += 1) {
         if (cancelled) return;
         setActiveCaptureStep(step);
         await delay(SCREENSHOT_MOCK_STEP_DELAY_MS);
@@ -166,7 +170,7 @@ export function ReviewClient({ reportId }: { reportId: string }) {
         return;
       }
 
-      setActiveCaptureStep(SCREENSHOT_ANALYSIS_STEPS.length - 1);
+      setActiveCaptureStep(steps.length - 1);
       setScreenshotContext(context);
       setReport(found);
       setActiveTab("overall");
@@ -266,7 +270,7 @@ export function ReviewClient({ reportId }: { reportId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [reportId, attempt, requestedUrl, inputType, isLegacyUrlDemo]);
+  }, [reportId, attempt, requestedUrl, inputType, isLegacyUrlDemo, reviewMode]);
 
   const handleRetry = useCallback(() => setAttempt((prev) => prev + 1), []);
 
@@ -294,6 +298,7 @@ export function ReviewClient({ reportId }: { reportId: string }) {
       return (
         <ScanningState
           inputType="url"
+          reviewMode={aiReport?.reviewMode ?? reviewMode}
           url={displayUrl}
           deviceType={aiReport?.source?.deviceType ?? deviceType}
           activeStepIndex={activeCaptureStep}
@@ -346,11 +351,13 @@ export function ReviewClient({ reportId }: { reportId: string }) {
   }
 
   if (status === "analyzing") {
+    const screenshotContext = getScreenshotReviewContext(reportId);
     return (
       <ScanningState
         inputType={inputType}
+        reviewMode={screenshotContext?.reviewMode ?? reviewMode}
         url={requestedUrl}
-        screenshotContext={getScreenshotReviewContext(reportId)}
+        screenshotContext={screenshotContext}
         activeStepIndex={activeCaptureStep}
       />
     );

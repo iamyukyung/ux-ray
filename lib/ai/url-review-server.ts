@@ -7,7 +7,7 @@ import {
   statusForUrlReviewError,
 } from "@/lib/capture/url-review-errors";
 import { hostnameForLog, normalizePublicUrl } from "@/lib/capture/validate-public-url";
-import { getScreenshotReviewTimeoutMs } from "@/lib/ai/config";
+import { getReviewTimeoutMs } from "@/lib/ai/config";
 import { createPipelineDeadlineContext } from "@/lib/ai/pipeline/pipeline-timeout";
 import { isCompletePipelineReport } from "@/lib/ai/pipeline/report-validation";
 import {
@@ -32,6 +32,7 @@ export type UrlReviewApiError = {
 const UrlReviewRequestSchema = z.object({
   url: z.string().trim().min(1),
   deviceType: z.enum(["desktop", "mobile"]),
+  reviewMode: z.enum(["quick", "precise"]).optional(),
   reviewLens: z.enum(["general", "norman"]).optional(),
   projectName: z.string().optional(),
   userGoal: z.string().optional(),
@@ -83,6 +84,7 @@ export function parseUrlReviewRequest(body: unknown):
     ok: true,
     value: {
       ...parsed.data,
+      reviewMode: parsed.data.reviewMode ?? "quick",
       reviewLens: parsed.data.reviewLens ?? "general",
     },
   };
@@ -97,7 +99,8 @@ export function buildValidatedInputFromCapture(
 
   return {
     metadata: {
-      reviewMode: "single-screen",
+      screenLayoutMode: "single-screen",
+      reviewMode: request.reviewMode ?? "quick",
       reviewLens: request.reviewLens,
       sourceType: "url",
       urlSource: {
@@ -174,7 +177,9 @@ export async function analyzeUrlWithOpenAI(
     options?.onCaptured?.(captured, captureDurationMs);
 
     const input = buildValidatedInputFromCapture(request, captured);
-    const deadline = createPipelineDeadlineContext(getScreenshotReviewTimeoutMs());
+    const deadline = createPipelineDeadlineContext(
+      getReviewTimeoutMs(request.reviewMode ?? "quick")
+    );
 
     try {
       const result = await analyzeScreenshotsWithOpenAI(

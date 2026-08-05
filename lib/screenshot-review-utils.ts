@@ -31,12 +31,20 @@ export function getScreenshotReviewMode(screenCount: number): ScreenshotReviewMo
   return "user-flow";
 }
 
+export function getScreenLayoutModeLabel(
+  mode: ScreenshotReviewMode,
+  screenCount: number
+): string {
+  if (mode === "single-screen") return "단일 화면";
+  return `사용자 흐름 · ${screenCount}개 화면`;
+}
+
+/** @deprecated getScreenLayoutModeLabel() 사용 */
 export function getReviewModeLabel(
   mode: ScreenshotReviewMode,
   screenCount: number
 ): string {
-  if (mode === "single-screen") return "단일 화면 리뷰";
-  return `사용자 흐름 리뷰 · ${screenCount}개 화면`;
+  return getScreenLayoutModeLabel(mode, screenCount);
 }
 
 export function reorderScreens(
@@ -74,11 +82,11 @@ export function buildScreenshotReviewContext(
   screens: UploadedScreen[],
   fields: Pick<
     ScreenshotReviewContext,
-    "projectName" | "userGoal" | "targetUser" | "focusArea" | "reviewLens"
+    "projectName" | "userGoal" | "targetUser" | "focusArea" | "reviewLens" | "reviewMode"
   >
 ): ScreenshotReviewContext | null {
-  const reviewMode = getScreenshotReviewMode(screens.length);
-  if (!reviewMode) return null;
+  const screenLayoutMode = getScreenshotReviewMode(screens.length);
+  if (!screenLayoutMode) return null;
 
   return {
     projectName: fields.projectName?.trim() || undefined,
@@ -86,7 +94,8 @@ export function buildScreenshotReviewContext(
     targetUser: fields.targetUser?.trim() || undefined,
     focusArea: fields.focusArea?.trim() || undefined,
     reviewLens: fields.reviewLens ?? "general",
-    reviewMode,
+    reviewMode: fields.reviewMode ?? "quick",
+    screenLayoutMode,
     screens: normalizeScreenOrders(screens),
   };
 }

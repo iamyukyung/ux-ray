@@ -131,7 +131,7 @@ evidence confidence:
 overallConfidence는 evidence 신뢰도, 이미지 품질, 화면 연결 명확성을 종합해 결정하세요.`;
 
 export interface ScreenshotReviewPromptContext {
-  reviewMode: ScreenshotReviewMode;
+  screenLayoutMode: ScreenshotReviewMode;
   projectName?: string;
   userGoal?: string;
   targetUser?: string;
@@ -148,7 +148,7 @@ export interface ScreenshotReviewPromptContext {
 
 export function buildScreenshotReviewContextPrompt(context: ScreenshotReviewPromptContext): string {
   const modeLabel =
-    context.reviewMode === "single-screen" ? "단일 화면 리뷰" : "사용자 흐름 리뷰";
+    context.screenLayoutMode === "single-screen" ? "단일 화면 리뷰" : "사용자 흐름 리뷰";
 
   const contextLines = [
     `리뷰 유형: ${modeLabel}`,
@@ -160,7 +160,7 @@ export function buildScreenshotReviewContextPrompt(context: ScreenshotReviewProm
   ].filter(Boolean);
 
   const modeInstructions =
-    context.reviewMode === "user-flow"
+    context.screenLayoutMode === "user-flow"
       ? [
           "",
           "이번 리뷰는 사용자 흐름입니다. 개별 화면 나열이 아니라 화면 간 연결, 단계 인지, 용어·행동 일관성, 완료 상태를 우선 분석하세요.",

@@ -25,6 +25,7 @@ import {
 import type {
   DeviceType,
   ReviewLens,
+  ReviewMode,
   ScreenReference,
   ScreenshotReviewDebugInfo,
   ScreenshotReviewMode,
@@ -73,7 +74,8 @@ export interface UrlReviewPipelineContext {
 }
 
 export interface ScreenshotReviewMetadata {
-  reviewMode: ScreenshotReviewMode;
+  screenLayoutMode: ScreenshotReviewMode;
+  reviewMode: ReviewMode;
   reviewLens: ReviewLens;
   sourceType?: "screenshots" | "url";
   urlSource?: UrlReviewSource;
@@ -122,15 +124,36 @@ const ScreenMetaSchema = z.object({
   order: z.number().int().min(0),
 });
 
-const MetadataSchema = z.object({
-  reviewMode: z.enum(["single-screen", "user-flow"]),
-  reviewLens: z.enum(["general", "norman"]).optional(),
-  projectName: z.string().optional(),
-  userGoal: z.string().optional(),
-  targetUser: z.string().optional(),
-  focusArea: z.string().optional(),
-  screens: z.array(ScreenMetaSchema).min(1).max(MAX_UPLOAD_COUNT),
-});
+const MetadataSchema = z
+  .object({
+    screenLayoutMode: z.enum(["single-screen", "user-flow"]).optional(),
+    reviewMode: z
+      .enum(["quick", "precise", "single-screen", "user-flow"])
+      .optional(),
+    reviewLens: z.enum(["general", "norman"]).optional(),
+    projectName: z.string().optional(),
+    userGoal: z.string().optional(),
+    targetUser: z.string().optional(),
+    focusArea: z.string().optional(),
+    screens: z.array(ScreenMetaSchema).min(1).max(MAX_UPLOAD_COUNT),
+  })
+  .transform((data) => {
+    let screenLayoutMode = data.screenLayoutMode;
+    let reviewMode: ReviewMode = "quick";
+
+    if (data.reviewMode === "single-screen" || data.reviewMode === "user-flow") {
+      screenLayoutMode = data.reviewMode;
+      reviewMode = "precise";
+    } else if (data.reviewMode === "quick" || data.reviewMode === "precise") {
+      reviewMode = data.reviewMode;
+    }
+
+    return {
+      ...data,
+      screenLayoutMode,
+      reviewMode,
+    };
+  });
 
 import { getAiModelConfig } from "@/lib/ai/config";
 
@@ -217,14 +240,22 @@ export async function parseScreenshotReviewRequest(
     };
   }
 
-  const expectedReviewMode =
+  const expectedScreenLayoutMode =
     screens.length === 1 ? "single-screen" : "user-flow";
-  if (parsedMetadata.data.reviewMode !== expectedReviewMode) {
+  const screenLayoutMode =
+    parsedMetadata.data.screenLayoutMode ?? expectedScreenLayoutMode;
+  if (screenLayoutMode !== expectedScreenLayoutMode) {
     return {
       ok: false,
-      error: apiError("INVALID_INPUT", "리뷰 유형 정보가 올바르지 않아요."),
+      error: apiError("INVALID_INPUT", "화면 구성 정보가 올바르지 않아요."),
     };
   }
+
+  const reviewMode: ReviewMode =
+    parsedMetadata.data.reviewMode === "quick" ||
+    parsedMetadata.data.reviewMode === "precise"
+      ? parsedMetadata.data.reviewMode
+      : "quick";
 
   const images: ValidatedScreenshotImage[] = [];
 
@@ -290,7 +321,8 @@ export async function parseScreenshotReviewRequest(
   });
 
   const metadata: ScreenshotReviewMetadata = {
-    reviewMode: parsedMetadata.data.reviewMode,
+    screenLayoutMode,
+    reviewMode,
     reviewLens: parsedMetadata.data.reviewLens ?? "general",
     projectName: normalizeOptional(parsedMetadata.data.projectName),
     userGoal: normalizeOptional(parsedMetadata.data.userGoal),
@@ -318,8 +350,10 @@ function buildDeviceSummary(screens: ScreenshotReviewScreenMeta[]): string {
   return parts.join(", ");
 }
 
-function defaultProjectName(reviewMode: ScreenshotReviewMode): string {
-  return reviewMode === "single-screen" ? "업로드 화면 UX 리뷰" : "업로드 사용자 흐름 UX 리뷰";
+function defaultProjectName(screenLayoutMode: ScreenshotReviewMode): string {
+  return screenLayoutMode === "single-screen"
+    ? "업로드 화면 UX 리뷰"
+    : "업로드 사용자 흐름 UX 리뷰";
 }
 
 function buildScreenMap(screens: ScreenshotReviewScreenMeta[]): Map<string, ScreenshotReviewScreenMeta> {
@@ -440,8 +474,10 @@ export function assembleScreenshotReviewReport(
     inputType: "screenshots",
     analysisType: "ai",
     reviewMode: metadata.reviewMode,
+    screenLayoutMode: metadata.screenLayoutMode,
     createdAt: new Date().toISOString(),
-    projectName: metadata.projectName ?? defaultProjectName(metadata.reviewMode),
+    projectName:
+      metadata.projectName ?? defaultProjectName(metadata.screenLayoutMode),
     userGoal: metadata.userGoal,
     targetUser: metadata.targetUser,
     focusArea: metadata.focusArea,
@@ -570,6 +606,11 @@ export async function analyzeScreenshotsWithOpenAI(
 ): Promise<
   { ok: true; result: ScreenshotReviewAnalysisResult } | { ok: false; error: ScreenshotReviewApiError }
 > {
+  if (input.metadata.reviewMode === "quick") {
+    const { runQuickReviewPipeline } = await import("@/lib/ai/pipeline/run-quick-review-pipeline");
+    return runQuickReviewPipeline(input, requestId, deadline, stageTracker);
+  }
+
   const { runScreenshotPipelineV2 } = await import("@/lib/ai/pipeline/run-screenshot-pipeline-v2");
   return runScreenshotPipelineV2(input, requestId, deadline, stageTracker);
 }
@@ -593,7 +634,7 @@ export async function analyzeScreenshotsWithOpenAI_v1(
   const client = new OpenAI({ apiKey, timeout: 85_000 });
 
   const promptContext: ScreenshotReviewPromptContext = {
-    reviewMode: input.metadata.reviewMode,
+    screenLayoutMode: input.metadata.screenLayoutMode,
     projectName: input.metadata.projectName,
     userGoal: input.metadata.userGoal,
     targetUser: input.metadata.targetUser,

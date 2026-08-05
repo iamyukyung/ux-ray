@@ -36,7 +36,7 @@ export function ScreenshotReviewSummary({ context }: ScreenshotReviewSummaryProp
             리뷰 유형
           </dt>
           <dd className="mt-1 text-sm text-ink">
-            {getReviewModeLabel(context.reviewMode, sortedScreens.length)}
+            {getReviewModeLabel(context.screenLayoutMode, sortedScreens.length)}
           </dd>
         </div>
 

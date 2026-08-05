@@ -73,6 +73,7 @@ function buildMetadata(context: ScreenshotReviewContext) {
 
   return {
     reviewMode: context.reviewMode,
+    screenLayoutMode: context.screenLayoutMode,
     reviewLens: context.reviewLens ?? "general",
     projectName: context.projectName,
     userGoal: context.userGoal,

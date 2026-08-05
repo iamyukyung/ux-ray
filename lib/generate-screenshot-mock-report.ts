@@ -26,7 +26,7 @@ function hashString(input: string): number {
 function contextSeed(context: ScreenshotReviewContext): string {
   const screens = sortScreensByOrder(context.screens);
   return [
-    context.reviewMode,
+    context.screenLayoutMode,
     context.projectName ?? "",
     context.userGoal ?? "",
     context.targetUser ?? "",
@@ -72,7 +72,7 @@ function buildDeviceSummary(context: ScreenshotReviewContext): string {
 function baseEvidence(screen: UploadedScreen, context: ScreenshotReviewContext): string[] {
   const items = [
     `업로드 화면: ${formatScreenLabel(screen)} (${deviceLabel(screen.deviceType)}, ${screen.width}×${screen.height})`,
-    getReviewModeLabel(context.reviewMode, context.screens.length),
+    getReviewModeLabel(context.screenLayoutMode, context.screens.length),
   ];
   if (context.userGoal?.trim()) {
     items.push(`사용자 목표(입력): ${context.userGoal.trim()}`);
@@ -107,7 +107,7 @@ function flowEvidence(
 
 function defaultProjectTitle(context: ScreenshotReviewContext): string {
   if (context.projectName?.trim()) return context.projectName.trim();
-  return context.reviewMode === "single-screen"
+  return context.screenLayoutMode === "single-screen"
     ? "업로드 화면 UX 리뷰"
     : "업로드 사용자 흐름 UX 리뷰";
 }
@@ -115,7 +115,7 @@ function defaultProjectTitle(context: ScreenshotReviewContext): string {
 function buildInsight(context: ScreenshotReviewContext, screens: UploadedScreen[]): ScreenshotReviewReport["insight"] {
   const count = screens.length;
   const modeLabel =
-    context.reviewMode === "single-screen" ? "단일 화면" : `${count}개 화면으로 구성된 사용자 흐름`;
+    context.screenLayoutMode === "single-screen" ? "단일 화면" : `${count}개 화면으로 구성된 사용자 흐름`;
 
   const goalPart = context.userGoal?.trim()
     ? `\n${context.userGoal.trim()}이라는 사용자 목표가 화면에서 어떻게 전달되는지 확인할 필요가 있습니다.`
@@ -130,12 +130,12 @@ function buildInsight(context: ScreenshotReviewContext, screens: UploadedScreen[
     : "";
 
   const summary =
-    context.reviewMode === "single-screen"
+    context.screenLayoutMode === "single-screen"
       ? `업로드된 1개 화면을 기준으로 ${modeLabel} 리뷰를 구성했습니다.${goalPart}${focusPart}${targetPart}\n실제 이미지 내용 분석이 아닌, 입력한 화면 정보와 맥락을 바탕으로 한 Mock 예시입니다.`
       : `총 ${count}개 화면으로 구성된 사용자 흐름입니다.${goalPart}${focusPart}${targetPart}\n화면 순서와 기기 정보를 바탕으로 흐름상 확인이 필요한 지점을 정리했습니다.`;
 
   const evidence: string[] = [
-    `리뷰 유형: ${getReviewModeLabel(context.reviewMode, count)}`,
+    `리뷰 유형: ${getReviewModeLabel(context.screenLayoutMode, count)}`,
     `업로드 화면 수: ${count}개`,
     ...screens.map((screen) => formatScreenLabel(screen) + ` (${deviceLabel(screen.deviceType)})`),
   ];
@@ -319,14 +319,15 @@ export function generateScreenshotMockReport(
 
   const seed = hashString(contextSeed(context));
   const issues =
-    context.reviewMode === "single-screen"
+    context.screenLayoutMode === "single-screen"
       ? buildSingleScreenIssues(screens[0]!, context, seed)
       : buildUserFlowIssues(screens, context, seed);
 
   return {
     inputType: "screenshots",
     analysisType: "mock",
-    reviewMode: context.reviewMode,
+    reviewMode: context.reviewMode ?? "precise",
+    screenLayoutMode: context.screenLayoutMode,
     reviewLens: context.reviewLens ?? "general",
     createdAt: new Date().toISOString(),
     projectName: defaultProjectTitle(context),

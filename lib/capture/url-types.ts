@@ -76,6 +76,7 @@ export type UrlReviewErrorCode =
 export interface UrlReviewRequest {
   url: string;
   deviceType: UrlCaptureDeviceType;
+  reviewMode?: "quick" | "precise";
   reviewLens: "general" | "norman";
   projectName?: string;
   userGoal?: string;

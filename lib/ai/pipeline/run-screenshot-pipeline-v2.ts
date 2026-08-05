@@ -7,6 +7,7 @@ import {
 import {
   getAiModelConfig,
   getReasoningEffortForStage,
+  PIPELINE_VERSION,
 } from "@/lib/ai/config";
 import {
   collectCropMetadata,
@@ -196,7 +197,7 @@ function buildReviewerInput(
     textPart(
       buildReviewerContextPrompt({
         reviewLens: context.reviewLens,
-        reviewMode: context.reviewMode,
+        reviewMode: context.screenLayoutMode,
         projectName: context.projectName,
         userGoal: context.userGoal,
         targetUser: context.targetUser,
@@ -669,7 +670,7 @@ export async function runScreenshotPipelineV2(
     }
 
     const postprocessed = postprocessPipelineDraft(draft, {
-      reviewMode: input.metadata.reviewMode,
+      reviewMode: input.metadata.screenLayoutMode,
       validScreenIds,
       cropMetadata,
     });
@@ -720,7 +721,7 @@ export async function runScreenshotPipelineV2(
 
     const diagnostics: PipelineDiagnostics = {
       requestId,
-      pipelineVersion: "2.0",
+      pipelineVersion: PIPELINE_VERSION,
       screenCount: sortedScreens.length,
       cropCount: cropMetadata.length,
       imageFingerprints: input.images.map((image) => image.sha256Prefix),

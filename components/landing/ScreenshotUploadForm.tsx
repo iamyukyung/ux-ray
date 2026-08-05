@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
-import { SCREENSHOT_ANALYSIS_STEPS } from "@/lib/analysis-steps";
+import { getScreenshotAnalysisSteps } from "@/lib/analysis-steps";
 import {
   createScreenshotReview,
   ScreenshotReviewRequestError,
@@ -13,16 +13,18 @@ import { ScreenshotReviewReportView } from "@/components/landing/ScreenshotRevie
 import { ScreenshotReviewSummary } from "@/components/landing/ScreenshotReviewSummary";
 import { ScreenFlowArrow, UploadedScreenCard } from "@/components/landing/UploadedScreenCard";
 import { UploadedImageZoomModal, type ZoomCropHighlight } from "@/components/landing/UploadedImageZoomModal";
+import { ReviewOptionCardFieldset } from "@/components/landing/ReviewOptionCardFieldset";
 import { Button } from "@/components/ui/Button";
 import type {
   DeviceType,
   ReviewLens,
+  ReviewMode,
   ScreenshotReviewContext,
   ScreenshotReviewDebugInfo,
   ScreenshotReviewReport,
   UploadedScreen,
 } from "@/lib/types";
-import { REVIEW_LENS_META } from "@/lib/types";
+import { REVIEW_DEPTH_META, REVIEW_LENS_META } from "@/lib/types";
 import {
   buildScreenshotReviewContext,
   defaultScreenName,
@@ -80,14 +82,29 @@ interface ReviewContextFields {
   userGoal: string;
   targetUser: string;
   focusArea: string;
+  reviewMode: ReviewMode;
   reviewLens: ReviewLens;
 }
+
+const REVIEW_DEPTH_OPTIONS = (["quick", "precise"] as const).map((mode) => ({
+  value: mode,
+  label: REVIEW_DEPTH_META[mode].inputLabel,
+  description: REVIEW_DEPTH_META[mode].description,
+  hint: REVIEW_DEPTH_META[mode].hint,
+}));
+
+const REVIEW_LENS_OPTIONS = (["general", "norman"] as const).map((lens) => ({
+  value: lens,
+  label: REVIEW_LENS_META[lens].inputLabel,
+  description: REVIEW_LENS_META[lens].description,
+}));
 
 const EMPTY_CONTEXT: ReviewContextFields = {
   projectName: "",
   userGoal: "",
   targetUser: "",
   focusArea: "",
+  reviewMode: "quick",
   reviewLens: "general",
 };
 
@@ -124,7 +141,7 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
   const screensRef = useRef(screens);
   screensRef.current = screens;
 
-  const reviewMode = getScreenshotReviewMode(screens.length);
+  const screenLayoutMode = getScreenshotReviewMode(screens.length);
   const allScreensConfigured = screens.length > 0 && screens.every(isScreenConfigured);
   const canConfirmReview = allScreensConfigured;
 
@@ -216,7 +233,7 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
       const response = await createScreenshotReview(reviewContext, (stepIndex) => {
         setActiveStepIndex(stepIndex);
       });
-      setActiveStepIndex(SCREENSHOT_ANALYSIS_STEPS.length - 1);
+      setActiveStepIndex(getScreenshotAnalysisSteps(contextFields.reviewMode).length - 1);
       await delay(300);
       setReport(response.report);
       setReportDebug(response.debug ?? null);
@@ -384,6 +401,7 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
       <>
         <ScanningState
           inputType="screenshots"
+          reviewMode={contextFields.reviewMode}
           screenshotContext={summaryContext}
           activeStepIndex={activeStepIndex}
         />
@@ -509,10 +527,10 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
           ) : null}
         </div>
 
-        {reviewMode ? (
+        {screenLayoutMode ? (
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center rounded-full border border-border bg-surface-alt px-3 py-1.5 text-xs font-medium text-ink">
-              {getReviewModeLabel(reviewMode, screens.length)}
+              {getReviewModeLabel(screenLayoutMode, screens.length)}
             </span>
           </div>
         ) : null}
@@ -584,46 +602,23 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
             </div>
 
             <div className="grid gap-4">
-              <fieldset>
-                <legend className="mb-1.5 block text-sm font-medium text-ink">검수 기준</legend>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  {(["general", "norman"] as const).map((lens) => {
-                    const meta = REVIEW_LENS_META[lens];
-                    const selected = contextFields.reviewLens === lens;
+              <ReviewOptionCardFieldset
+                legend="리뷰 방식"
+                name="screenshotReviewMode"
+                value={contextFields.reviewMode}
+                options={REVIEW_DEPTH_OPTIONS}
+                onChange={(value) =>
+                  setContextFields((prev) => ({ ...prev, reviewMode: value as ReviewMode }))
+                }
+              />
 
-                    return (
-                      <label
-                        key={lens}
-                        className={cn(
-                          "flex cursor-pointer flex-col rounded-lg border p-4 transition-colors",
-                          selected
-                            ? "border-accent bg-accent/5 ring-1 ring-accent/30"
-                            : "border-border bg-surface hover:border-accent/40"
-                        )}
-                      >
-                        <span className="flex items-start gap-3">
-                          <input
-                            type="radio"
-                            name="reviewLens"
-                            value={lens}
-                            checked={selected}
-                            onChange={() => handleReviewLensChange(lens)}
-                            className="mt-1 h-4 w-4 flex-shrink-0 accent-accent"
-                          />
-                          <span className="min-w-0">
-                            <span className="block text-sm font-semibold text-ink">
-                              {meta.inputLabel}
-                            </span>
-                            <span className="mt-1 block text-sm leading-relaxed text-ink-muted">
-                              {meta.description}
-                            </span>
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
+              <ReviewOptionCardFieldset
+                legend="검수 기준"
+                name="screenshotReviewLens"
+                value={contextFields.reviewLens}
+                options={REVIEW_LENS_OPTIONS}
+                onChange={(value) => handleReviewLensChange(value as ReviewLens)}
+              />
 
               <div>
                 <label htmlFor="projectName" className="mb-1.5 block text-sm font-medium text-ink">

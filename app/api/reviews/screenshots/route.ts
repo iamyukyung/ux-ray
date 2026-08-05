@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { getScreenshotReviewTimeoutMs } from "@/lib/ai/config";
+import { getReviewTimeoutMs } from "@/lib/ai/config";
 import {
   createStageTracker,
   logScreenshotReviewError,
@@ -71,7 +71,9 @@ async function runScreenshotReviewJob(
   requestId: string,
   startedAt: number
 ): Promise<void> {
-  const deadline = createPipelineDeadlineContext(getScreenshotReviewTimeoutMs());
+  const deadline = createPipelineDeadlineContext(
+    getReviewTimeoutMs(input.metadata.reviewMode)
+  );
   const tracker = createStageTracker("request-validation");
   tracker.onStageChange = (stage: PipelineStage) => {
     updateScreenshotReviewJobStage(reviewId, stage);
@@ -137,7 +139,10 @@ export async function POST(request: Request): Promise<Response> {
   logScreenshotReviewImages(requestId, parsed.value.images);
 
   const reviewId = requestId;
-  createScreenshotReviewJob(reviewId);
+  createScreenshotReviewJob(reviewId, {
+    reviewMode: parsed.value.metadata.reviewMode ?? "quick",
+    inputType: "screenshots",
+  });
 
   // 파이프라인은 백그라운드에서 계속 실행 — 응답을 막지 않습니다.
   void runScreenshotReviewJob(reviewId, parsed.value, requestId, startedAt);
