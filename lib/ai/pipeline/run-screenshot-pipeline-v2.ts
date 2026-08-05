@@ -48,7 +48,7 @@ import {
 import {
   buildReviewerContextPrompt,
   buildReviewerRewritePrompt,
-  SCREENSHOT_REVIEWER_SYSTEM_PROMPT,
+  getReviewerSystemPrompt,
 } from "@/lib/ai/prompts/screenshot-reviewer";
 import {
   isCritiqueApproved,
@@ -110,7 +110,7 @@ async function runObserverForScreen(
     ...imagePart(
       processed.overviewBuffer,
       "image/jpeg",
-      config.imageDetail,
+      config.overviewImageDetail,
       "전체 페이지 Overview"
     ),
   ];
@@ -120,7 +120,7 @@ async function runObserverForScreen(
       ...imagePart(
         processed.analysisBuffer,
         processed.analysisMimeType,
-        config.imageDetail,
+        config.cropImageDetail,
         "분석용 전체 화면 (분할 없음)"
       )
     );
@@ -130,7 +130,7 @@ async function runObserverForScreen(
         ...imagePart(
           crop.buffer,
           "image/jpeg",
-          config.imageDetail,
+          config.cropImageDetail,
           `Section crop ${crop.metadata.cropId} (${crop.metadata.locationLabel}, y=${crop.metadata.yStart}-${crop.metadata.yEnd})`
         )
       );
@@ -141,9 +141,11 @@ async function runObserverForScreen(
     requestId,
     stage: "observer-request",
     model: config.observerModel,
-    imageDetail: config.imageDetail,
+    overviewImageDetail: config.overviewImageDetail,
+    cropImageDetail: config.cropImageDetail,
     reasoningEffort: getReasoningEffortForStage(config, "observer"),
-    imageCount: 1 + (processed.crops.length > 0 ? processed.crops.length : 1),
+    overviewImageCount: 1,
+    cropImageCount: processed.crops.length > 0 ? processed.crops.length : 1,
   });
 
   return callStructuredOutput({
@@ -182,6 +184,7 @@ function buildReviewerInput(
   const content = [
     textPart(
       buildReviewerContextPrompt({
+        reviewLens: context.reviewLens,
         reviewMode: context.reviewMode,
         projectName: context.projectName,
         userGoal: context.userGoal,
@@ -211,7 +214,7 @@ function buildReviewerInput(
       ...imagePart(
         processed.overviewBuffer,
         "image/jpeg",
-        config.imageDetail,
+        config.overviewImageDetail,
         `Overview — ${processed.screenId}`
       )
     );
@@ -222,7 +225,7 @@ function buildReviewerInput(
         ...imagePart(
           crop.buffer,
           "image/jpeg",
-          config.imageDetail,
+          config.cropImageDetail,
           `Crop ${crop.metadata.cropId}`
         )
       );
@@ -232,18 +235,18 @@ function buildReviewerInput(
   return [{ role: "user", content }];
 }
 
-function countReviewerImages(
+function countStageImages(
   processedScreens: ProcessedScreenImage[],
   selectedCrops: ProcessedCrop[]
-): number {
+): { overviewCount: number; cropCount: number } {
   const selectedCropIds = reviewerCropIdSet(selectedCrops);
-  let count = processedScreens.length;
+  let cropCount = 0;
 
   for (const screen of processedScreens) {
-    count += screen.crops.filter((crop) => selectedCropIds.has(crop.metadata.cropId)).length;
+    cropCount += screen.crops.filter((crop) => selectedCropIds.has(crop.metadata.cropId)).length;
   }
 
-  return count;
+  return { overviewCount: processedScreens.length, cropCount };
 }
 
 async function runReviewer(
@@ -264,20 +267,23 @@ async function runReviewer(
   deadline.assertNotAborted(tracker.stage);
 
   const reasoningStage = rewrite ? "rewrite" : "reviewer";
+  const { overviewCount, cropCount } = countStageImages(processedScreens, selectedCrops);
 
   logOpenAICallPrep({
     requestId,
     stage: tracker.stage,
     model: config.reviewerModel,
-    imageDetail: config.imageDetail,
+    overviewImageDetail: config.overviewImageDetail,
+    cropImageDetail: config.cropImageDetail,
     reasoningEffort: getReasoningEffortForStage(config, reasoningStage),
-    imageCount: countReviewerImages(processedScreens, selectedCrops),
+    overviewImageCount: overviewCount,
+    cropImageCount: cropCount,
   });
 
   return callStructuredOutput({
     client,
     model: config.reviewerModel,
-    instructions: SCREENSHOT_REVIEWER_SYSTEM_PROMPT,
+    instructions: getReviewerSystemPrompt(context.reviewLens),
     input: buildReviewerInput(
       context,
       observations,
@@ -307,6 +313,7 @@ function buildCriticInput(
   const content = [
     textPart(
       buildCriticInputPrompt({
+        reviewLens: context.reviewLens,
         userGoal: context.userGoal,
         focusArea: context.focusArea,
       })
@@ -320,7 +327,7 @@ function buildCriticInput(
       ...imagePart(
         processed.overviewBuffer,
         "image/jpeg",
-        config.imageDetail,
+        config.overviewImageDetail,
         `Overview — ${processed.screenId}`
       )
     );
@@ -331,7 +338,7 @@ function buildCriticInput(
         ...imagePart(
           crop.buffer,
           "image/jpeg",
-          config.imageDetail,
+          config.cropImageDetail,
           `Referenced crop ${crop.metadata.cropId}`
         )
       );
@@ -339,20 +346,6 @@ function buildCriticInput(
   }
 
   return [{ role: "user", content }];
-}
-
-function countCriticImages(
-  processedScreens: ProcessedScreenImage[],
-  selectedCrops: ProcessedCrop[]
-): number {
-  const selectedCropIds = reviewerCropIdSet(selectedCrops);
-  let count = processedScreens.length;
-
-  for (const screen of processedScreens) {
-    count += screen.crops.filter((crop) => selectedCropIds.has(crop.metadata.cropId)).length;
-  }
-
-  return count;
 }
 
 async function runCritic(
@@ -369,13 +362,17 @@ async function runCritic(
 ): Promise<ScreenshotReviewCritique | null> {
   deadline.assertNotAborted(tracker.stage);
 
+  const { overviewCount, cropCount } = countStageImages(processedScreens, selectedCrops);
+
   logOpenAICallPrep({
     requestId,
     stage: "critic-request",
     model: config.criticModel,
-    imageDetail: config.imageDetail,
+    overviewImageDetail: config.overviewImageDetail,
+    cropImageDetail: config.cropImageDetail,
     reasoningEffort: getReasoningEffortForStage(config, "critic"),
-    imageCount: countCriticImages(processedScreens, selectedCrops),
+    overviewImageCount: overviewCount,
+    cropImageCount: cropCount,
   });
 
   return callStructuredOutput({
@@ -711,6 +708,8 @@ export async function runScreenshotPipelineV2(
       wasRewritten,
       finalIssueCount: report.issues.length,
       qualityScores: quality,
+      reviewLens: input.metadata.reviewLens,
+      principleTaggedIssueCount: report.issues.filter((issue) => issue.principle != null).length,
     };
 
     logPipelineComplete({
@@ -722,6 +721,8 @@ export async function runScreenshotPipelineV2(
       rewriteDurationMs,
       wasRewritten,
       success: true,
+      reviewLens: input.metadata.reviewLens,
+      principleTaggedIssueCount: diagnostics.principleTaggedIssueCount ?? 0,
     });
 
     responded = true;
@@ -751,6 +752,7 @@ export async function runScreenshotPipelineV2(
       rewriteDurationMs,
       wasRewritten,
       success: false,
+      reviewLens: input.metadata.reviewLens,
     });
 
     if (isPipelineTimeoutError(error)) {

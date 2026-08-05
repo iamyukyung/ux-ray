@@ -16,11 +16,13 @@ import { UploadedImageZoomModal, type ZoomCropHighlight } from "@/components/lan
 import { Button } from "@/components/ui/Button";
 import type {
   DeviceType,
+  ReviewLens,
   ScreenshotReviewContext,
   ScreenshotReviewDebugInfo,
   ScreenshotReviewReport,
   UploadedScreen,
 } from "@/lib/types";
+import { REVIEW_LENS_META } from "@/lib/types";
 import {
   buildScreenshotReviewContext,
   defaultScreenName,
@@ -40,8 +42,6 @@ import {
   validateIncomingFiles,
 } from "@/lib/upload-validation";
 import { cn } from "@/lib/utils";
-
-const STEP_INTERVAL_MS = 1_200;
 
 type ReviewPhase = "edit" | "loading" | "report" | "error";
 
@@ -80,6 +80,7 @@ interface ReviewContextFields {
   userGoal: string;
   targetUser: string;
   focusArea: string;
+  reviewLens: ReviewLens;
 }
 
 const EMPTY_CONTEXT: ReviewContextFields = {
@@ -87,6 +88,7 @@ const EMPTY_CONTEXT: ReviewContextFields = {
   userGoal: "",
   targetUser: "",
   focusArea: "",
+  reviewLens: "general",
 };
 
 interface ScreenshotUploadFormProps {
@@ -210,14 +212,10 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
     setReportDebug(null);
     setReviewError(null);
 
-    let stepIndex = 0;
-    const stepTimer = window.setInterval(() => {
-      stepIndex = Math.min(stepIndex + 1, SCREENSHOT_ANALYSIS_STEPS.length - 1);
-      setActiveStepIndex(stepIndex);
-    }, STEP_INTERVAL_MS);
-
     try {
-      const response = await createScreenshotReview(reviewContext);
+      const response = await createScreenshotReview(reviewContext, (stepIndex) => {
+        setActiveStepIndex(stepIndex);
+      });
       setActiveStepIndex(SCREENSHOT_ANALYSIS_STEPS.length - 1);
       await delay(300);
       setReport(response.report);
@@ -232,7 +230,6 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
       }
       setReviewPhase("error");
     } finally {
-      window.clearInterval(stepTimer);
       setIsGenerating(false);
     }
   }
@@ -366,6 +363,12 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
 
   function handleContextChange(field: keyof ReviewContextFields, value: string) {
     setContextFields((prev) => ({ ...prev, [field]: value }));
+    resetSummaryState();
+    clearReportState();
+  }
+
+  function handleReviewLensChange(reviewLens: ReviewLens) {
+    setContextFields((prev) => ({ ...prev, reviewLens }));
     resetSummaryState();
     clearReportState();
   }
@@ -581,6 +584,47 @@ export function ScreenshotUploadForm({ onPhaseChange }: ScreenshotUploadFormProp
             </div>
 
             <div className="grid gap-4">
+              <fieldset>
+                <legend className="mb-1.5 block text-sm font-medium text-ink">검수 기준</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(["general", "norman"] as const).map((lens) => {
+                    const meta = REVIEW_LENS_META[lens];
+                    const selected = contextFields.reviewLens === lens;
+
+                    return (
+                      <label
+                        key={lens}
+                        className={cn(
+                          "flex cursor-pointer flex-col rounded-lg border p-4 transition-colors",
+                          selected
+                            ? "border-accent bg-accent/5 ring-1 ring-accent/30"
+                            : "border-border bg-surface hover:border-accent/40"
+                        )}
+                      >
+                        <span className="flex items-start gap-3">
+                          <input
+                            type="radio"
+                            name="reviewLens"
+                            value={lens}
+                            checked={selected}
+                            onChange={() => handleReviewLensChange(lens)}
+                            className="mt-1 h-4 w-4 flex-shrink-0 accent-accent"
+                          />
+                          <span className="min-w-0">
+                            <span className="block text-sm font-semibold text-ink">
+                              {meta.inputLabel}
+                            </span>
+                            <span className="mt-1 block text-sm leading-relaxed text-ink-muted">
+                              {meta.description}
+                            </span>
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+
               <div>
                 <label htmlFor="projectName" className="mb-1.5 block text-sm font-medium text-ink">
                   리뷰 대상 또는 기능명

@@ -1,6 +1,8 @@
 import type { CropMetadata } from "@/lib/ai/image-preprocess";
 import type { ScreenshotReviewDraft } from "@/lib/ai/schemas/screenshot-review-draft";
 import type { VisualEvidence } from "@/lib/ai/schemas/shared";
+import { getNormanPrincipleDefinition, isValidNormanPrincipleKey } from "@/lib/ai/norman-principles";
+import type { NormanPrinciple } from "@/lib/types";
 import type { ScreenshotReviewMode } from "@/lib/types";
 
 const GENERIC_PHRASES = [
@@ -83,6 +85,25 @@ function sanitizeEvidence(
   return result;
 }
 
+function sanitizePrinciple(
+  principle: ScreenshotReviewDraft["issues"][number]["principle"]
+): NormanPrinciple | null {
+  if (!principle) return null;
+  if (!isValidNormanPrincipleKey(principle.key)) return null;
+
+  const definition = getNormanPrincipleDefinition(principle.key);
+  if (!definition) return null;
+
+  const rationale = principle.rationale.trim();
+  if (!rationale) return null;
+
+  return {
+    key: principle.key,
+    label: definition.label,
+    rationale,
+  };
+}
+
 function isGenericIssue(issue: ScreenshotReviewDraft["issues"][number]): boolean {
   const combined = `${issue.title} ${issue.description} ${issue.recommendation}`;
   const normalized = normalizeText(combined);
@@ -155,7 +176,7 @@ export function postprocessPipelineDraft(
         cropMetaById
       );
       if (evidence.length === 0) return null;
-      return { ...issue, evidence };
+      return { ...issue, evidence, principle: sanitizePrinciple(issue.principle) };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
     .filter((issue) => !isGenericIssue(issue));

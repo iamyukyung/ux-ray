@@ -35,3 +35,21 @@ export const ScreenshotIssueCategorySchema = z.enum([
 ]);
 
 export type ScreenshotIssueCategory = z.infer<typeof ScreenshotIssueCategorySchema>;
+
+export const NormanPrincipleKeySchema = z.enum([
+  "discoverability_signifiers",
+  "affordance",
+  "mapping",
+  "feedback",
+  "constraints",
+  "conceptual_model",
+  "error_prevention_recovery",
+]);
+
+export const NormanPrincipleSchema = z.object({
+  key: NormanPrincipleKeySchema,
+  label: z.string().min(1),
+  rationale: z.string().min(1),
+});
+
+export type NormanPrinciple = z.infer<typeof NormanPrincipleSchema>;

@@ -38,7 +38,17 @@ export interface ScreenshotReviewResponse {
   debug?: ScreenshotReviewDebugInfo;
 }
 
-const REQUEST_TIMEOUT_MS = 630_000;
+interface ScreenshotReviewStatusResponse {
+  status: "processing" | "done" | "error" | "not-found";
+  stepIndex?: number;
+  report?: ScreenshotReviewReport;
+  debug?: ScreenshotReviewDebugInfo;
+  error?: { code?: string; message?: string; stage?: string };
+}
+
+const POLL_INTERVAL_MS = 2_500;
+/** 서버 파이프라인 자체 타임아웃(최대 10분)보다 넉넉한 폴링 안전장치 — 무한 폴링 방지용입니다. */
+const MAX_POLL_DURATION_MS = 900_000;
 
 const ERROR_MESSAGES: Record<ScreenshotReviewClientErrorCode, string> = {
   INVALID_INPUT: "입력한 화면 정보를 다시 확인해주세요.",
@@ -63,6 +73,7 @@ function buildMetadata(context: ScreenshotReviewContext) {
 
   return {
     reviewMode: context.reviewMode,
+    reviewLens: context.reviewLens ?? "general",
     projectName: context.projectName,
     userGoal: context.userGoal,
     targetUser: context.targetUser,
@@ -94,40 +105,95 @@ export function cancelScreenshotReviewRequest(): void {
   inFlightController = null;
 }
 
-export async function createScreenshotReview(
-  context: ScreenshotReviewContext
-): Promise<ScreenshotReviewResponse> {
-  if (inFlightController) {
-    throw new ScreenshotReviewRequestError("INTERNAL_ERROR", "이미 분석 요청이 진행 중입니다.");
-  }
-
-  const controller = new AbortController();
-  inFlightController = controller;
-
-  const timeoutId = window.setTimeout(() => {
-    controller.abort();
-  }, REQUEST_TIMEOUT_MS);
-
-  try {
-    const formData = new FormData();
-    const screens = sortScreensByOrder(context.screens);
-
-    for (const screen of screens) {
-      if (!screen.file || screen.file.size === 0) {
-        throw new ScreenshotReviewRequestError(
-          "INVALID_INPUT",
-          `${screen.screenName}: 유효하지 않은 이미지 파일입니다.`
-        );
-      }
-      formData.append("images", screen.file, screen.fileName);
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
     }
 
-    formData.append("metadata", JSON.stringify(buildMetadata(context)));
+    const timer = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
 
-    const response = await fetch("/api/reviews/screenshots", {
-      method: "POST",
-      body: formData,
-      signal: controller.signal,
+    function onAbort() {
+      window.clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function startScreenshotReviewJob(
+  context: ScreenshotReviewContext,
+  signal: AbortSignal
+): Promise<string> {
+  const formData = new FormData();
+  const screens = sortScreensByOrder(context.screens);
+
+  for (const screen of screens) {
+    if (!screen.file || screen.file.size === 0) {
+      throw new ScreenshotReviewRequestError(
+        "INVALID_INPUT",
+        `${screen.screenName}: 유효하지 않은 이미지 파일입니다.`
+      );
+    }
+    formData.append("images", screen.file, screen.fileName);
+  }
+
+  formData.append("metadata", JSON.stringify(buildMetadata(context)));
+
+  const response = await fetch("/api/reviews/screenshots", {
+    method: "POST",
+    body: formData,
+    signal,
+    cache: "no-store",
+  });
+
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new ScreenshotReviewRequestError("NETWORK_ERROR", ERROR_MESSAGES.NETWORK_ERROR);
+  }
+
+  if (!response.ok) {
+    const errorPayload = payload as {
+      error?: { code?: string; message?: string; stage?: string };
+    };
+    const code = mapServerErrorCode(errorPayload.error?.code ?? "INTERNAL_ERROR");
+    const message = errorPayload.error?.message ?? ERROR_MESSAGES[code];
+    throw new ScreenshotReviewRequestError(code, message, errorPayload.error?.stage);
+  }
+
+  const result = payload as { reviewId?: string };
+  if (!result.reviewId) {
+    throw new ScreenshotReviewRequestError("INTERNAL_ERROR", "리뷰 요청을 시작하지 못했습니다.");
+  }
+
+  return result.reviewId;
+}
+
+async function pollScreenshotReviewJob(
+  reviewId: string,
+  signal: AbortSignal,
+  onProgress: (stepIndex: number) => void
+): Promise<ScreenshotReviewResponse> {
+  const startedAt = Date.now();
+
+  for (;;) {
+    if (signal.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+
+    if (Date.now() - startedAt > MAX_POLL_DURATION_MS) {
+      throw new ScreenshotReviewRequestError("PIPELINE_TIMEOUT", ERROR_MESSAGES.PIPELINE_TIMEOUT);
+    }
+
+    const response = await fetch(`/api/reviews/screenshots/${reviewId}`, {
+      signal,
       cache: "no-store",
     });
 
@@ -138,36 +204,59 @@ export async function createScreenshotReview(
       throw new ScreenshotReviewRequestError("NETWORK_ERROR", ERROR_MESSAGES.NETWORK_ERROR);
     }
 
-    if (!response.ok) {
-      const errorPayload = payload as {
-        error?: { code?: string; message?: string; stage?: string };
-      };
-      const code = mapServerErrorCode(errorPayload.error?.code ?? "INTERNAL_ERROR");
-      const message = errorPayload.error?.message ?? ERROR_MESSAGES[code];
-      throw new ScreenshotReviewRequestError(code, message, errorPayload.error?.stage);
+    if (response.status === 404) {
+      throw new ScreenshotReviewRequestError("INTERNAL_ERROR", "리뷰 요청을 찾을 수 없습니다.");
     }
 
-    const result = payload as { report?: ScreenshotReviewReport; _debug?: ScreenshotReviewDebugInfo };
+    const result = payload as ScreenshotReviewStatusResponse;
+
+    if (result.status === "processing") {
+      if (typeof result.stepIndex === "number") {
+        onProgress(result.stepIndex);
+      }
+      await delay(POLL_INTERVAL_MS, signal);
+      continue;
+    }
+
+    if (result.status === "error") {
+      const code = mapServerErrorCode(result.error?.code ?? "INTERNAL_ERROR");
+      const message = result.error?.message ?? ERROR_MESSAGES[code];
+      throw new ScreenshotReviewRequestError(code, message, result.error?.stage);
+    }
+
     if (!result.report || !isCompletePipelineReport(result.report)) {
       throw new ScreenshotReviewRequestError("INVALID_AI_RESPONSE", ERROR_MESSAGES.INVALID_AI_RESPONSE);
     }
 
-    return {
-      report: result.report,
-      debug: result._debug,
-    };
+    return { report: result.report, debug: result.debug };
+  }
+}
+
+export async function createScreenshotReview(
+  context: ScreenshotReviewContext,
+  onProgress?: (stepIndex: number) => void
+): Promise<ScreenshotReviewResponse> {
+  if (inFlightController) {
+    throw new ScreenshotReviewRequestError("INTERNAL_ERROR", "이미 분석 요청이 진행 중입니다.");
+  }
+
+  const controller = new AbortController();
+  inFlightController = controller;
+
+  try {
+    const reviewId = await startScreenshotReviewJob(context, controller.signal);
+    return await pollScreenshotReviewJob(reviewId, controller.signal, onProgress ?? (() => {}));
   } catch (error) {
     if (error instanceof ScreenshotReviewRequestError) {
       throw error;
     }
 
     if (error instanceof DOMException && error.name === "AbortError") {
-      throw new ScreenshotReviewRequestError("PIPELINE_TIMEOUT", ERROR_MESSAGES.PIPELINE_TIMEOUT);
+      throw new ScreenshotReviewRequestError("ABORTED", ERROR_MESSAGES.ABORTED);
     }
 
     throw new ScreenshotReviewRequestError("NETWORK_ERROR", ERROR_MESSAGES.NETWORK_ERROR);
   } finally {
-    window.clearTimeout(timeoutId);
     if (inFlightController === controller) {
       inFlightController = null;
     }

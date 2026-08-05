@@ -7,6 +7,7 @@ import {
   sortScreensByOrder,
 } from "@/lib/screenshot-review-utils";
 import {
+  REVIEW_LENS_META,
   SCREEN_DEVICE_LABELS,
   type ScreenshotReviewContext,
 } from "@/lib/types";
@@ -75,6 +76,15 @@ export function ScreenshotReviewSummary({ context }: ScreenshotReviewSummaryProp
           <dd className="mt-1 text-sm text-ink">
             데스크톱 {deviceCounts.desktop} · 모바일 {deviceCounts.mobile} · 태블릿{" "}
             {deviceCounts.tablet} · 직접 지정 {deviceCounts.custom}
+          </dd>
+        </div>
+
+        <div>
+          <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+            검수 기준
+          </dt>
+          <dd className="mt-1 text-sm text-ink">
+            {REVIEW_LENS_META[context.reviewLens ?? "general"].inputLabel}
           </dd>
         </div>
 

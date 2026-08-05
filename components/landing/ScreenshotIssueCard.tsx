@@ -65,6 +65,20 @@ export function ScreenshotIssueCard({
         <h3 className="mt-4 text-base font-semibold leading-snug text-ink">{issue.title}</h3>
         <p className="mt-2 text-sm leading-relaxed text-ink-muted">{issue.description}</p>
 
+        {issue.principle ? (
+          <div className="mt-4 rounded-lg border border-border bg-surface-alt/60 p-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+              검수 원칙
+            </p>
+            <p className="mt-2 inline-flex items-center rounded-full border border-border bg-surface px-2.5 py-1 text-xs font-medium text-ink">
+              {issue.principle.label}
+            </p>
+            <p className="mt-3 text-sm leading-relaxed text-ink-muted">
+              {issue.principle.rationale}
+            </p>
+          </div>
+        ) : null}
+
         <div className="mt-6 space-y-5">
           <IssueField label="관련 화면">
             <ul className="flex flex-wrap gap-2">

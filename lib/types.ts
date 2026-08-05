@@ -7,6 +7,23 @@ export type ScreenDeviceType = DeviceType;
 
 export type ScreenshotReviewMode = "single-screen" | "user-flow";
 
+export type ReviewLens = "general" | "norman";
+
+export type NormanPrincipleKey =
+  | "discoverability_signifiers"
+  | "affordance"
+  | "mapping"
+  | "feedback"
+  | "constraints"
+  | "conceptual_model"
+  | "error_prevention_recovery";
+
+export interface NormanPrinciple {
+  key: NormanPrincipleKey;
+  label: string;
+  rationale: string;
+}
+
 export interface UploadedScreen {
   id: string;
   file: File;
@@ -25,6 +42,7 @@ export interface ScreenshotReviewContext {
   userGoal?: string;
   targetUser?: string;
   focusArea?: string;
+  reviewLens?: ReviewLens;
   reviewMode: ScreenshotReviewMode;
   screens: UploadedScreen[];
 }
@@ -116,6 +134,7 @@ export interface ScreenshotReviewIssue {
   expectedImpact: string;
   recommendation: string;
   validationMethod?: string;
+  principle?: NormanPrinciple | null;
 }
 
 export interface ScreenshotReviewInsight {
@@ -129,6 +148,7 @@ export interface ScreenshotReviewReport {
   analysisType?: "ai" | "mock";
   pipelineVersion?: string;
   reviewMode: ScreenshotReviewMode;
+  reviewLens?: ReviewLens;
   createdAt: string;
   projectName?: string;
   userGoal?: string;
@@ -169,8 +189,28 @@ export interface ScreenshotReviewDebugInfo {
     wasRewritten: boolean;
     finalIssueCount: number;
     qualityScores: ScreenshotReviewQuality;
+    reviewLens?: ReviewLens;
+    principleTaggedIssueCount?: number;
   };
 }
+
+export const REVIEW_LENS_META: Record<
+  ReviewLens,
+  { inputLabel: string; reportLabel: string; description: string }
+> = {
+  general: {
+    inputLabel: "종합 UX 리뷰",
+    reportLabel: "종합 UX 리뷰",
+    description:
+      "페이지 목적, 정보 구조, 콘텐츠 우선순위, 사용자 과업과 인터랙션을 종합적으로 검토해요.",
+  },
+  norman: {
+    inputLabel: "노먼 기반 리뷰",
+    reportLabel: "노먼 기반 UX 리뷰",
+    description:
+      "발견 가능성, 시그니파이어, 피드백, 매핑 등 사용자와 인터페이스의 상호작용을 중심으로 검토해요.",
+  },
+};
 
 export const ANALYSIS_CONFIDENCE_LABELS: Record<AnalysisConfidence, string> = {
   high: "높음",

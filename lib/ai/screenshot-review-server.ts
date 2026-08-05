@@ -24,6 +24,7 @@ import {
 } from "@/lib/ai/schemas/screenshot-analysis";
 import type {
   DeviceType,
+  ReviewLens,
   ScreenReference,
   ScreenshotReviewDebugInfo,
   ScreenshotReviewMode,
@@ -61,6 +62,7 @@ export interface ValidatedScreenshotInput {
 
 export interface ScreenshotReviewMetadata {
   reviewMode: ScreenshotReviewMode;
+  reviewLens: ReviewLens;
   projectName?: string;
   userGoal?: string;
   targetUser?: string;
@@ -106,6 +108,7 @@ const ScreenMetaSchema = z.object({
 
 const MetadataSchema = z.object({
   reviewMode: z.enum(["single-screen", "user-flow"]),
+  reviewLens: z.enum(["general", "norman"]).optional(),
   projectName: z.string().optional(),
   userGoal: z.string().optional(),
   targetUser: z.string().optional(),
@@ -272,6 +275,7 @@ export async function parseScreenshotReviewRequest(
 
   const metadata: ScreenshotReviewMetadata = {
     reviewMode: parsedMetadata.data.reviewMode,
+    reviewLens: parsedMetadata.data.reviewLens ?? "general",
     projectName: normalizeOptional(parsedMetadata.data.projectName),
     userGoal: normalizeOptional(parsedMetadata.data.userGoal),
     targetUser: normalizeOptional(parsedMetadata.data.targetUser),

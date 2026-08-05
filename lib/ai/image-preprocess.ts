@@ -35,6 +35,9 @@ export interface ProcessedScreenImage {
 }
 
 const MAX_CROPS_PER_SCREEN = 8;
+/** 매우 긴 화면(세로 TALL_IMAGE_HEIGHT_PX 이상)은 Observer에게 보내는 crop 수를 더 낮게 제한합니다. */
+const MAX_CROPS_PER_TALL_SCREEN = 5;
+const TALL_IMAGE_HEIGHT_PX = 8_000;
 const OVERLAP_RATIO = 0.12;
 const MIN_SPLIT_HEIGHT_RATIO = 2.2;
 const MIN_SPLIT_HEIGHT_PX = 1600;
@@ -186,7 +189,8 @@ function computeCropRegions(
 ): Array<{ yStart: number; yEnd: number }> {
   const targetCropHeight = Math.max(width, 900);
   let numCrops = Math.ceil(height / (targetCropHeight * (1 - OVERLAP_RATIO)));
-  numCrops = Math.min(MAX_CROPS_PER_SCREEN, Math.max(2, numCrops));
+  const cropCap = height >= TALL_IMAGE_HEIGHT_PX ? MAX_CROPS_PER_TALL_SCREEN : MAX_CROPS_PER_SCREEN;
+  numCrops = Math.min(cropCap, Math.max(2, numCrops));
 
   const cropHeight = Math.ceil(height / (numCrops - (numCrops - 1) * OVERLAP_RATIO));
   const step = cropHeight * (1 - OVERLAP_RATIO);

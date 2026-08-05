@@ -16,6 +16,8 @@ export type PipelineStage =
 
 export interface PipelineStageTracker {
   stage: PipelineStage;
+  /** 비동기 잡 상태 저장 등, stage 전환마다 부수 작업이 필요할 때 사용합니다. */
+  onStageChange?: (stage: PipelineStage) => void;
 }
 
 export function createStageTracker(
@@ -29,6 +31,7 @@ export function setPipelineStage(
   stage: PipelineStage
 ): void {
   tracker.stage = stage;
+  tracker.onStageChange?.(stage);
 }
 
 export interface ClientApiErrorBody {
@@ -78,9 +81,11 @@ export function logOpenAICallPrep(input: {
   requestId: string;
   stage: PipelineStage;
   model: string;
-  imageDetail: ImageDetail;
+  overviewImageDetail: ImageDetail;
+  cropImageDetail: ImageDetail;
   reasoningEffort: ReasoningEffort;
-  imageCount: number;
+  overviewImageCount: number;
+  cropImageCount: number;
 }): void {
   if (process.env.NODE_ENV !== "development") return;
 
@@ -88,9 +93,12 @@ export function logOpenAICallPrep(input: {
     requestId: input.requestId,
     stage: input.stage,
     model: input.model,
-    imageDetail: input.imageDetail,
+    overviewImageDetail: input.overviewImageDetail,
+    cropImageDetail: input.cropImageDetail,
     reasoningEffort: input.reasoningEffort,
-    imageCount: input.imageCount,
+    overviewImageCount: input.overviewImageCount,
+    cropImageCount: input.cropImageCount,
+    imageCount: input.overviewImageCount + input.cropImageCount,
   });
 }
 
@@ -137,6 +145,8 @@ export function logPipelineComplete(input: {
   rewriteDurationMs: number;
   wasRewritten: boolean;
   success: boolean;
+  reviewLens?: import("@/lib/types").ReviewLens;
+  principleTaggedIssueCount?: number;
 }): void {
   if (process.env.NODE_ENV !== "development") return;
 

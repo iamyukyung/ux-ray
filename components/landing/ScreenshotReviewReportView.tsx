@@ -12,6 +12,7 @@ import { formatScreenReferenceLabel } from "@/lib/screenshot-report-utils";
 import { getReviewModeLabel } from "@/lib/screenshot-review-utils";
 import {
   ANALYSIS_CONFIDENCE_LABELS,
+  REVIEW_LENS_META,
   type ScreenshotReviewDebugInfo,
   type ScreenshotReviewReport,
   type ScreenshotVisualEvidence,
@@ -42,6 +43,8 @@ export function ScreenshotReviewReportView({
   const isAiReport = report.analysisType === "ai";
   const strengths = report.strengths ?? [];
   const limitations = report.limitations ?? [];
+  const reviewLens = report.reviewLens ?? "general";
+  const reviewLensLabel = REVIEW_LENS_META[reviewLens].reportLabel;
 
   function handleScreenReferenceClick(screenId: string) {
     setHighlightedScreenId(screenId);
@@ -111,6 +114,10 @@ export function ScreenshotReviewReportView({
             <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">리뷰 대상</p>
             <h1 className="mt-1 break-words text-2xl font-semibold text-ink">{report.projectName}</h1>
             <dl className="mt-4 grid gap-2 text-sm text-ink-muted sm:grid-cols-2">
+              <div>
+                <dt className="text-xs uppercase tracking-wide">검수 기준</dt>
+                <dd className="mt-0.5 text-ink">{reviewLensLabel}</dd>
+              </div>
               <div>
                 <dt className="text-xs uppercase tracking-wide">리뷰 유형</dt>
                 <dd className="mt-0.5 text-ink">

@@ -122,6 +122,7 @@ export function assemblePipelineReport(input: {
       expectedImpact: issue.expectedImpact,
       recommendation: issue.recommendation,
       validationMethod: issue.validationMethod,
+      principle: issue.principle ?? null,
     };
   });
 
@@ -136,6 +137,7 @@ export function assemblePipelineReport(input: {
     analysisType: "ai",
     pipelineVersion: PIPELINE_VERSION,
     reviewMode: input.metadata.reviewMode,
+    reviewLens: input.metadata.reviewLens,
     createdAt: new Date().toISOString(),
     projectName: input.metadata.projectName ?? defaultProjectName(input.metadata.reviewMode),
     userGoal: input.metadata.userGoal,
@@ -174,6 +176,8 @@ export interface PipelineDiagnostics {
   wasRewritten: boolean;
   finalIssueCount: number;
   qualityScores: ScreenshotReviewQuality;
+  reviewLens?: import("@/lib/types").ReviewLens;
+  principleTaggedIssueCount?: number;
 }
 
 export function buildPipelineDebugInfo(input: {

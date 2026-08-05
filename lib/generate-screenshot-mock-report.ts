@@ -327,6 +327,7 @@ export function generateScreenshotMockReport(
     inputType: "screenshots",
     analysisType: "mock",
     reviewMode: context.reviewMode,
+    reviewLens: context.reviewLens ?? "general",
     createdAt: new Date().toISOString(),
     projectName: defaultProjectTitle(context),
     userGoal: context.userGoal?.trim() || undefined,

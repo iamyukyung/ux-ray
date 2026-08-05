@@ -1,5 +1,6 @@
 import { z } from "zod/v3";
 import {
+  NormanPrincipleSchema,
   ReviewAssumptionSchema,
   ScreenshotIssueCategorySchema,
   VisualEvidenceSchema,
@@ -35,6 +36,7 @@ export const ScreenshotReviewDraftSchema = z.object({
         expectedImpact: z.string().min(1),
         recommendation: z.string().min(1),
         validationMethod: z.string().min(1),
+        principle: NormanPrincipleSchema.nullable(),
       })
     )
     .min(1)

@@ -74,7 +74,7 @@ export function buildScreenshotReviewContext(
   screens: UploadedScreen[],
   fields: Pick<
     ScreenshotReviewContext,
-    "projectName" | "userGoal" | "targetUser" | "focusArea"
+    "projectName" | "userGoal" | "targetUser" | "focusArea" | "reviewLens"
   >
 ): ScreenshotReviewContext | null {
   const reviewMode = getScreenshotReviewMode(screens.length);
@@ -85,6 +85,7 @@ export function buildScreenshotReviewContext(
     userGoal: fields.userGoal?.trim() || undefined,
     targetUser: fields.targetUser?.trim() || undefined,
     focusArea: fields.focusArea?.trim() || undefined,
+    reviewLens: fields.reviewLens ?? "general",
     reviewMode,
     screens: normalizeScreenOrders(screens),
   };
