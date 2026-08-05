@@ -18,6 +18,7 @@ import {
 } from "@/lib/ai/screenshot-review-server";
 import { sha256Prefix } from "@/lib/ai/image-buffer-utils";
 import type { PipelineStageTracker } from "@/lib/ai/pipeline/pipeline-stage";
+import { buildUrlScreenAssetsTransfer } from "@/lib/ai/url-screen-assets";
 import { z } from "zod";
 
 export type UrlReviewApiError = {
@@ -209,8 +210,22 @@ export async function analyzeUrlWithOpenAI(
         return { ok: false, error: urlApiError("INVALID_AI_RESPONSE") };
       }
 
+      const screenId = "url-screen-1";
+      const assetBundle = await buildUrlScreenAssetsTransfer({
+        reviewId: requestId,
+        screenId,
+        captured,
+        cropMetadata: result.result.report.cropMetadata,
+      });
+
+      const reportWithAssets: ScreenshotReviewAnalysisResult["report"] = {
+        ...result.result.report,
+        screenAssets: assetBundle.refs,
+      };
+
       if (process.env.NODE_ENV === "development") {
         const domSummary = summarizeDomSnapshot(captured.domSnapshot);
+        const reportJson = JSON.stringify(reportWithAssets);
         console.info("[url-review:complete]", {
           requestId,
           sourceType: "url",
@@ -233,9 +248,24 @@ export async function analyzeUrlWithOpenAI(
           totalDurationMs: Date.now() - startedAt,
           success: true,
         });
+        console.info("[url-review:assets]", {
+          requestId,
+          previewWidth: assetBundle.refs[0]?.previewWidth,
+          previewHeight: assetBundle.refs[0]?.previewHeight,
+          previewByteSize: assetBundle.previewByteSize,
+          screenAssetCount: assetBundle.transfer.length,
+          reportHasBase64: reportJson.includes('"base64"'),
+        });
       }
 
-      return result;
+      return {
+        ok: true,
+        result: {
+          ...result.result,
+          report: reportWithAssets,
+          screenAssetsTransfer: assetBundle.transfer,
+        },
+      };
     } finally {
       deadline.cleanup();
     }

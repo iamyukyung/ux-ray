@@ -1,10 +1,17 @@
 import type {
   ScreenshotReviewDebugInfo,
   ScreenshotReviewReport,
+  UploadedScreen,
+  UrlScreenAssetTransfer,
 } from "@/lib/types";
 import type { UrlReviewRequest } from "@/lib/capture/url-types";
 import { URL_REVIEW_ERROR_MESSAGES } from "@/lib/capture/url-review-errors";
 import { isCompletePipelineReport } from "@/lib/ai/pipeline/report-validation";
+import {
+  ingestUrlReviewScreenAssets,
+  loadUrlReportFromSession,
+  saveUrlReportToSession,
+} from "@/lib/url-review-assets";
 
 export type UrlReviewClientErrorCode =
   | keyof typeof URL_REVIEW_ERROR_MESSAGES
@@ -24,8 +31,10 @@ export class UrlReviewRequestError extends Error {
 }
 
 export interface UrlReviewResponse {
+  reviewId: string;
   report: ScreenshotReviewReport;
   debug?: ScreenshotReviewDebugInfo;
+  screens: UploadedScreen[];
 }
 
 interface UrlReviewStatusResponse {
@@ -33,6 +42,7 @@ interface UrlReviewStatusResponse {
   stepIndex?: number;
   report?: ScreenshotReviewReport;
   debug?: ScreenshotReviewDebugInfo;
+  screenAssets?: UrlScreenAssetTransfer[];
   error?: { code?: string; message?: string; stage?: string };
 }
 
@@ -120,6 +130,27 @@ async function startUrlReviewJob(
   return result.reviewId;
 }
 
+async function finalizeUrlReviewResponse(
+  reviewId: string,
+  report: ScreenshotReviewReport,
+  debug: ScreenshotReviewDebugInfo | undefined,
+  transferAssets: UrlScreenAssetTransfer[]
+): Promise<UrlReviewResponse> {
+  // 폴링 GET이 status: "done"을 반환한 직후(또는 새로고침 시 session+IndexedDB 복원)에만 실행.
+  const ingested = await ingestUrlReviewScreenAssets({
+    reviewId,
+    report,
+    transferAssets,
+  });
+
+  return {
+    reviewId,
+    report: ingested.report,
+    debug,
+    screens: ingested.screens,
+  };
+}
+
 async function pollUrlReviewJob(
   reviewId: string,
   signal: AbortSignal,
@@ -149,6 +180,10 @@ async function pollUrlReviewJob(
     }
 
     if (response.status === 404) {
+      const cachedReport = loadUrlReportFromSession(reviewId);
+      if (cachedReport && isCompletePipelineReport(cachedReport)) {
+        return finalizeUrlReviewResponse(reviewId, cachedReport, undefined, []);
+      }
       throw new UrlReviewRequestError("INTERNAL_ERROR", "리뷰 요청을 찾을 수 없습니다.");
     }
 
@@ -172,7 +207,13 @@ async function pollUrlReviewJob(
       throw new UrlReviewRequestError("INVALID_AI_RESPONSE", CLIENT_ERROR_MESSAGES.INVALID_AI_RESPONSE);
     }
 
-    return { report: result.report, debug: result.debug };
+    // POST 202 직후가 아니라, 폴링 GET이 done을 반환한 이 시점에서 screenAssets를 IndexedDB에 저장.
+    return finalizeUrlReviewResponse(
+      reviewId,
+      result.report,
+      result.debug,
+      result.screenAssets ?? []
+    );
   }
 }
 
@@ -182,6 +223,11 @@ export async function pollUrlReviewById(
   onProgress?: (stepIndex: number) => void,
   signal?: AbortSignal
 ): Promise<UrlReviewResponse> {
+  const cachedReport = loadUrlReportFromSession(reviewId);
+  if (cachedReport && isCompletePipelineReport(cachedReport)) {
+    return finalizeUrlReviewResponse(reviewId, cachedReport, undefined, []);
+  }
+
   const controller = signal ? null : new AbortController();
   const abortSignal = signal ?? controller!.signal;
 
@@ -218,3 +264,5 @@ export async function createUrlReview(
     }
   }
 }
+
+export { saveUrlReportToSession, loadUrlReportFromSession };

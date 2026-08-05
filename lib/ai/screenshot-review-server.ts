@@ -31,6 +31,7 @@ import type {
   ScreenshotReviewReport,
   ScreenshotVisualEvidence,
   UrlReviewSource,
+  UrlScreenAssetTransfer,
 } from "@/lib/types";
 import type { UrlDomSnapshot } from "@/lib/capture/url-types";
 import { SCREEN_DEVICE_LABELS } from "@/lib/types";
@@ -104,6 +105,8 @@ export interface ValidatedScreenshotImage {
 export interface ScreenshotReviewAnalysisResult {
   report: ScreenshotReviewReport;
   debug: ScreenshotReviewDebugInfo;
+  /** URL 리뷰 전용 — API 응답 1회 전송 후 클라이언트에서 IndexedDB 저장 */
+  screenAssetsTransfer?: UrlScreenAssetTransfer[];
 }
 
 const MAX_UPLOAD_COUNT = 10;

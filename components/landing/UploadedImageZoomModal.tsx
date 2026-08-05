@@ -51,6 +51,8 @@ export function UploadedImageZoomModal({
 }: UploadedImageZoomModalProps) {
   const titleId = useId();
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const open = screen !== null;
 
   useBodyScrollLock(open);
@@ -79,6 +81,16 @@ export function UploadedImageZoomModal({
     onClose();
     requestAnimationFrame(() => returnFocusRef?.current?.focus());
   }
+
+  useEffect(() => {
+    if (!open || !cropHighlight) return;
+
+    const timer = window.setTimeout(() => {
+      highlightRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [open, cropHighlight, screen?.id]);
 
   if (!screen) return null;
 
@@ -145,16 +157,20 @@ export function UploadedImageZoomModal({
               </button>
             </div>
 
-            <div className="overflow-y-auto overscroll-contain p-4 sm:p-6">
+            <div
+              ref={scrollContainerRef}
+              className="overflow-y-auto overscroll-contain p-4 sm:p-6"
+            >
               <div className="relative mx-auto w-fit max-w-full">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={screen.previewUrl}
                   alt={`${screen.fileName} 원본`}
-                  className="mx-auto block h-auto max-h-[75vh] w-auto max-w-full"
+                  className="mx-auto block h-auto max-h-none w-auto max-w-full"
                 />
                 {highlightTop !== null && highlightHeight !== null ? (
                   <div
+                    ref={highlightRef}
                     aria-hidden
                     className={cn(
                       "pointer-events-none absolute inset-x-0 border-2 border-accent bg-accent/10",

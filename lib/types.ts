@@ -153,6 +153,42 @@ export interface UrlReviewSource {
   deviceType: "desktop" | "mobile";
 }
 
+export interface CapturedPreview {
+  mimeType: "image/webp";
+  width: number;
+  height: number;
+  base64: string;
+}
+
+export interface ScreenAssetCrop {
+  cropId: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/** API 응답 전송용 — base64는 클라이언트 수신 직후 IndexedDB 저장 후 폐기 */
+export interface UrlScreenAssetTransfer {
+  screenId: string;
+  sourceType: "url";
+  preview: CapturedPreview;
+  originalWidth: number;
+  originalHeight: number;
+  crops: ScreenAssetCrop[];
+}
+
+/** report / sessionStorage에 저장 — Blob·base64 없음 */
+export interface ReportScreenAssetRef {
+  screenId: string;
+  assetKey: string;
+  originalWidth: number;
+  originalHeight: number;
+  previewWidth: number;
+  previewHeight: number;
+  crops: ScreenAssetCrop[];
+}
+
 export interface ScreenshotReviewReport {
   inputType: "screenshots" | "url";
   sourceType?: "screenshots" | "url";
@@ -176,6 +212,7 @@ export interface ScreenshotReviewReport {
   limitations?: string[];
   quality?: ScreenshotReviewQuality;
   cropMetadata?: ScreenCropMetadata[];
+  screenAssets?: ReportScreenAssetRef[];
 }
 
 /** 개발 환경 디버그용 — API 응답에만 포함 (production 제외) */

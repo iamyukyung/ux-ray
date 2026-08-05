@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { URL_ANALYSIS_STEPS } from "@/lib/analysis-steps";
 import {
   createUrlReview,
@@ -10,11 +10,20 @@ import {
 import { ScanningState } from "@/components/report/ScanningState";
 import { ScreenshotReviewErrorState } from "@/components/landing/ScreenshotReviewErrorState";
 import { ScreenshotReviewReportView } from "@/components/landing/ScreenshotReviewReportView";
+import {
+  UploadedImageZoomModal,
+  type ZoomCropHighlight,
+} from "@/components/landing/UploadedImageZoomModal";
 import { Button } from "@/components/ui/Button";
+import {
+  clearUrlReviewClientData,
+  revokeUploadedScreenUrls,
+} from "@/lib/url-review-assets";
 import type {
   ReviewLens,
   ScreenshotReviewDebugInfo,
   ScreenshotReviewReport,
+  UploadedScreen,
 } from "@/lib/types";
 import { REVIEW_LENS_META, SCREEN_DEVICE_LABELS } from "@/lib/types";
 import { cn, looksLikeUrl, normalizeUrl } from "@/lib/utils";
@@ -60,6 +69,11 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
   const [activeStepIndex, setActiveStepIndex] = useState(0);
   const [report, setReport] = useState<ScreenshotReviewReport | null>(null);
   const [reportDebug, setReportDebug] = useState<ScreenshotReviewDebugInfo | null>(null);
+  const [reviewId, setReviewId] = useState<string | null>(null);
+  const [screens, setScreens] = useState<UploadedScreen[]>([]);
+  const [zoomScreen, setZoomScreen] = useState<UploadedScreen | null>(null);
+  const [zoomCropHighlight, setZoomCropHighlight] = useState<ZoomCropHighlight | null>(null);
+  const zoomReturnFocusRef = useRef<HTMLElement | null>(null);
   const [reviewError, setReviewError] = useState<{
     code: UrlReviewClientErrorCode;
     message?: string;
@@ -70,6 +84,17 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
     onPhaseChange?.(phase);
   }, [phase, onPhaseChange]);
 
+  useEffect(() => {
+    return () => {
+      revokeUploadedScreenUrls(screens);
+    };
+  }, [screens]);
+
+  function clearReportScreens() {
+    revokeUploadedScreenUrls(screens);
+    setScreens([]);
+  }
+
   function setReviewPhase(next: ReviewPhase) {
     setPhase(next);
   }
@@ -79,6 +104,8 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
     setFieldError(null);
     setReport(null);
     setReportDebug(null);
+    setReviewId(null);
+    clearReportScreens();
     setReviewError(null);
   }
 
@@ -107,6 +134,8 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
     setActiveStepIndex(0);
     setReport(null);
     setReportDebug(null);
+    setReviewId(null);
+    clearReportScreens();
     setReviewError(null);
     setFieldError(null);
 
@@ -129,8 +158,10 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
 
       setActiveStepIndex(URL_ANALYSIS_STEPS.length - 1);
       await delay(300);
+      setReviewId(response.reviewId);
       setReport(response.report);
       setReportDebug(response.debug ?? null);
+      setScreens(response.screens);
       setReviewPhase("report");
     } catch (error) {
       if (error instanceof UrlReviewRequestError) {
@@ -161,14 +192,31 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
     const confirmed = window.confirm("입력한 URL과 리뷰 맥락을 모두 초기화하고 새 리뷰를 시작할까요?");
     if (!confirmed) return;
 
+    if (reviewId) {
+      void clearUrlReviewClientData(reviewId, report);
+    }
+
     setFields(EMPTY_FIELDS);
     setHasAiConsent(false);
     setFieldError(null);
     setReport(null);
     setReportDebug(null);
+    setReviewId(null);
+    clearReportScreens();
     setReviewError(null);
     setActiveStepIndex(0);
     setReviewPhase("edit");
+  }
+
+  function handleZoom(screen: UploadedScreen, cropHighlight?: ZoomCropHighlight | null) {
+    zoomReturnFocusRef.current = document.activeElement as HTMLElement | null;
+    setZoomScreen(screen);
+    setZoomCropHighlight(cropHighlight ?? null);
+  }
+
+  function handleCloseZoom() {
+    setZoomScreen(null);
+    setZoomCropHighlight(null);
   }
 
   if (phase === "loading") {
@@ -184,14 +232,23 @@ export function UrlForm({ onPhaseChange }: UrlFormProps) {
 
   if (phase === "report" && report) {
     return (
-      <ScreenshotReviewReportView
-        report={report}
-        debug={reportDebug}
-        screens={[]}
-        onEditInput={handleEditInput}
-        onStartNewReview={handleStartNewReview}
-        onZoom={() => {}}
-      />
+      <>
+        <ScreenshotReviewReportView
+          report={report}
+          debug={reportDebug}
+          screens={screens}
+          assetLoadState={screens.length > 0 ? "ready" : "missing"}
+          onEditInput={handleEditInput}
+          onStartNewReview={handleStartNewReview}
+          onZoom={handleZoom}
+        />
+        <UploadedImageZoomModal
+          screen={zoomScreen}
+          cropHighlight={zoomCropHighlight}
+          onClose={handleCloseZoom}
+          returnFocusRef={zoomReturnFocusRef}
+        />
+      </>
     );
   }
 

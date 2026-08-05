@@ -58,8 +58,21 @@ export async function GET(
 
   const body =
     process.env.NODE_ENV === "development"
-      ? { status: "done", report: job.result.report, _debug: job.result.debug }
-      : { status: "done", report: job.result.report };
+      ? {
+          status: "done" as const,
+          report: job.result.report,
+          ...(job.result.screenAssetsTransfer?.length
+            ? { screenAssets: job.result.screenAssetsTransfer }
+            : {}),
+          _debug: job.result.debug,
+        }
+      : {
+          status: "done" as const,
+          report: job.result.report,
+          ...(job.result.screenAssetsTransfer?.length
+            ? { screenAssets: job.result.screenAssetsTransfer }
+            : {}),
+        };
 
   return Response.json(body, { headers: { "Cache-Control": "no-store" } });
 }

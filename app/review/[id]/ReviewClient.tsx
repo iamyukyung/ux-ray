@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { URL_ANALYSIS_STEPS } from "@/lib/analysis-steps";
 import { ScanningState } from "@/components/report/ScanningState";
@@ -16,6 +16,11 @@ import { DemoDataBanner } from "@/components/report/DemoDataBanner";
 import { ScreenshotReviewErrorState } from "@/components/landing/ScreenshotReviewErrorState";
 import { ScreenshotReviewReportView } from "@/components/landing/ScreenshotReviewReportView";
 import {
+  UploadedImageZoomModal,
+  type ZoomCropHighlight,
+} from "@/components/landing/UploadedImageZoomModal";
+import type { UrlAssetLoadState } from "@/components/landing/UrlCapturedPageSection";
+import {
   captureStepIndex as getCaptureStepIndex,
   CaptureRequestError,
   requestCapture,
@@ -27,6 +32,11 @@ import {
   UrlReviewRequestError,
   type UrlReviewClientErrorCode,
 } from "@/lib/api/create-url-review";
+import {
+  loadUrlReportFromSession,
+  revokeUploadedScreenUrls,
+} from "@/lib/url-review-assets";
+import { useUrlReviewScreens } from "@/lib/use-url-review-screens";
 import { getScreenshotReviewContext } from "@/lib/screenshot-review-store";
 import { SCREENSHOT_MOCK_STEP_DELAY_MS } from "@/lib/screenshot-review-utils";
 import type { CaptureProgressStep, CaptureResult } from "@/lib/capture-types";
@@ -36,6 +46,7 @@ import type {
   ScreenshotReviewContext,
   ScreenshotReviewDebugInfo,
   ScreenshotReviewReport,
+  UploadedScreen,
 } from "@/lib/types";
 import { looksLikeUrl, normalizeUrl } from "@/lib/utils";
 
@@ -73,6 +84,24 @@ export function ReviewClient({ reportId }: { reportId: string }) {
   } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [activeTab, setActiveTab] = useState<ReviewTabId>("overall");
+  const [urlScreens, setUrlScreens] = useState<UploadedScreen[]>([]);
+  const [urlAssetLoadState, setUrlAssetLoadState] = useState<UrlAssetLoadState>("idle");
+  const [zoomScreen, setZoomScreen] = useState<UploadedScreen | null>(null);
+  const [zoomCropHighlight, setZoomCropHighlight] = useState<ZoomCropHighlight | null>(null);
+  const zoomReturnFocusRef = useRef<HTMLElement | null>(null);
+
+  const { screens: restoredUrlScreens, assetLoadState: restoredAssetLoadState } =
+    useUrlReviewScreens(
+      reportId,
+      aiReport,
+      urlScreens
+    );
+
+  useEffect(() => {
+    return () => {
+      revokeUploadedScreenUrls(urlScreens);
+    };
+  }, [urlScreens]);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,7 +110,17 @@ export function ReviewClient({ reportId }: { reportId: string }) {
       setUrlReviewError(null);
       setAiReport(null);
       setAiDebug(null);
+      setUrlScreens([]);
+      setUrlAssetLoadState("idle");
       setActiveCaptureStep(0);
+
+      const cachedReport = loadUrlReportFromSession(reportId);
+      if (cachedReport) {
+        setAiReport(cachedReport);
+        setUrlAssetLoadState("loading");
+        setStatus("ready");
+        return;
+      }
 
       try {
         const response = await pollUrlReviewById(reportId, (stepIndex) => {
@@ -96,6 +135,8 @@ export function ReviewClient({ reportId }: { reportId: string }) {
         await delay(300);
         setAiReport(response.report);
         setAiDebug(response.debug ?? null);
+        setUrlScreens(response.screens);
+        setUrlAssetLoadState(response.screens.length > 0 ? "ready" : "missing");
         setStatus("ready");
       } catch (error) {
         if (cancelled) return;
@@ -240,6 +281,17 @@ export function ReviewClient({ reportId }: { reportId: string }) {
     router.push("/");
   }
 
+  function handleUrlZoom(screen: UploadedScreen, cropHighlight?: ZoomCropHighlight | null) {
+    zoomReturnFocusRef.current = document.activeElement as HTMLElement | null;
+    setZoomScreen(screen);
+    setZoomCropHighlight(cropHighlight ?? null);
+  }
+
+  function handleCloseUrlZoom() {
+    setZoomScreen(null);
+    setZoomCropHighlight(null);
+  }
+
   if (inputType === "url" && !isLegacyUrlDemo) {
     const displayUrl =
       aiReport?.source?.requestedUrl ??
@@ -276,15 +328,30 @@ export function ReviewClient({ reportId }: { reportId: string }) {
     }
 
     if (status === "ready" && aiReport) {
+      const displayScreens = restoredUrlScreens.length > 0 ? restoredUrlScreens : urlScreens;
+      const displayAssetLoadState =
+        displayScreens.length > 0
+          ? "ready"
+          : urlAssetLoadState !== "idle"
+            ? urlAssetLoadState
+            : restoredAssetLoadState;
+
       return (
         <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
           <ScreenshotReviewReportView
             report={aiReport}
             debug={aiDebug}
-            screens={[]}
+            screens={displayScreens}
+            assetLoadState={displayAssetLoadState}
             onEditInput={handleBackToHome}
             onStartNewReview={handleBackToHome}
-            onZoom={() => {}}
+            onZoom={handleUrlZoom}
+          />
+          <UploadedImageZoomModal
+            screen={zoomScreen}
+            cropHighlight={zoomCropHighlight}
+            onClose={handleCloseUrlZoom}
+            returnFocusRef={zoomReturnFocusRef}
           />
         </div>
       );

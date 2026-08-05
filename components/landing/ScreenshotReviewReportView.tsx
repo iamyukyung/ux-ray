@@ -1,12 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ScreenshotIssueCard } from "@/components/landing/ScreenshotIssueCard";
 import { ScreenshotReviewScreensSection } from "@/components/landing/ScreenshotReviewScreensSection";
+import {
+  UrlCapturedPageSection,
+  type UrlAssetLoadState,
+} from "@/components/landing/UrlCapturedPageSection";
 import type { ZoomCropHighlight } from "@/components/landing/UploadedImageZoomModal";
 import { AiInsightCard } from "@/components/report/AiInsightCard";
 import { InsightReasoningAccordion } from "@/components/report/InsightReasoningAccordion";
 import { Button } from "@/components/ui/Button";
+import { scaleEvidenceCropForUrlReport } from "@/lib/url-review-assets";
 import { screenshotInsightToAiInsight } from "@/lib/screenshot-report-utils";
 import { formatScreenReferenceLabel } from "@/lib/screenshot-report-utils";
 import { getReviewModeLabel } from "@/lib/screenshot-review-utils";
@@ -25,6 +30,7 @@ interface ScreenshotReviewReportViewProps {
   report: ScreenshotReviewReport;
   debug?: ScreenshotReviewDebugInfo | null;
   screens: UploadedScreen[];
+  assetLoadState?: UrlAssetLoadState;
   onEditInput: () => void;
   onStartNewReview: () => void;
   onZoom: (screen: UploadedScreen, cropHighlight?: ZoomCropHighlight | null) => void;
@@ -34,6 +40,7 @@ export function ScreenshotReviewReportView({
   report,
   debug,
   screens,
+  assetLoadState = "idle",
   onEditInput,
   onStartNewReview,
   onZoom,
@@ -48,7 +55,8 @@ export function ScreenshotReviewReportView({
   const reviewLensLabel = REVIEW_LENS_META[reviewLens].reportLabel;
   const isUrlReport = report.sourceType === "url" || report.inputType === "url";
   const urlSource = report.source;
-  const showScreensSection = screens.length > 0;
+  const showScreensSection = !isUrlReport && screens.length > 0;
+  const urlCapturedScreen = isUrlReport ? (screens[0] ?? null) : null;
 
   function handleScreenReferenceClick(screenId: string) {
     setHighlightedScreenId(screenId);
@@ -60,10 +68,14 @@ export function ScreenshotReviewReportView({
     const screen = screens.find((item) => item.id === evidence.screenId);
     if (!screen) return;
 
-    const crop =
+    let crop =
       evidence.cropId && report.cropMetadata
         ? report.cropMetadata.find((item) => item.cropId === evidence.cropId)
         : undefined;
+
+    if (crop && isUrlReport) {
+      crop = scaleEvidenceCropForUrlReport(crop, report);
+    }
 
     onZoom(screen, crop ? { crop } : null);
   }
@@ -211,6 +223,21 @@ export function ScreenshotReviewReportView({
             ) : null}
           </dl>
         </section>
+      ) : null}
+
+      {isUrlReport ? (
+        <UrlCapturedPageSection
+          report={report}
+          screen={urlCapturedScreen}
+          assetLoadState={
+            screens.length > 0
+              ? "ready"
+              : assetLoadState === "idle" && report.screenAssets?.length
+                ? "loading"
+                : assetLoadState
+          }
+          onZoom={(screen) => onZoom(screen)}
+        />
       ) : null}
 
       {report.pageSummary ? (
