@@ -12,6 +12,7 @@ import { AiInsightCard } from "@/components/report/AiInsightCard";
 import { InsightReasoningAccordion } from "@/components/report/InsightReasoningAccordion";
 import { Button } from "@/components/ui/Button";
 import { scaleEvidenceCropForUrlReport } from "@/lib/url-review-assets";
+import { isUrlMobileCapture } from "@/lib/capture-preview-utils";
 import { screenshotInsightToAiInsight } from "@/lib/screenshot-report-utils";
 import { formatScreenReferenceLabel } from "@/lib/screenshot-report-utils";
 import { getReviewModeLabel, getScreenLayoutModeLabel } from "@/lib/screenshot-review-utils";
@@ -64,8 +65,9 @@ export function ScreenshotReviewReportView({
   const screenLayoutLabel = getScreenLayoutModeLabel(screenLayoutMode, report.screenCount);
   const isUrlReport = report.sourceType === "url" || report.inputType === "url";
   const urlSource = report.source;
-  const showScreensSection = !isUrlReport && screens.length > 0;
   const urlCapturedScreen = isUrlReport ? (screens[0] ?? null) : null;
+  const isMobileUrlCapture = isUrlReport && isUrlMobileCapture(report);
+  const showScreensSection = !isUrlReport && screens.length > 0;
 
   function handleScreenReferenceClick(screenId: string) {
     setHighlightedScreenId(screenId);
@@ -237,18 +239,44 @@ export function ScreenshotReviewReportView({
       ) : null}
 
       {isUrlReport ? (
-        <UrlCapturedPageSection
-          report={report}
-          screen={urlCapturedScreen}
-          assetLoadState={
-            screens.length > 0
-              ? "ready"
-              : assetLoadState === "idle" && report.screenAssets?.length
-                ? "loading"
-                : assetLoadState
-          }
-          onZoom={(screen) => onZoom(screen)}
-        />
+        isMobileUrlCapture && report.executiveSummary ? (
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(320px,380px)_minmax(0,1fr)]">
+            <UrlCapturedPageSection
+              report={report}
+              screen={urlCapturedScreen}
+              assetLoadState={
+                screens.length > 0
+                  ? "ready"
+                  : assetLoadState === "idle" && report.screenAssets?.length
+                    ? "loading"
+                    : assetLoadState
+              }
+              onZoom={(screen) => onZoom(screen)}
+            />
+            <section
+              aria-labelledby="executive-summary-heading"
+              className="rounded-xl border border-border bg-surface p-5 sm:p-6"
+            >
+              <h2 id="executive-summary-heading" className="text-base font-semibold text-ink">
+                종합 요약
+              </h2>
+              <p className="mt-3 text-sm leading-relaxed text-ink">{report.executiveSummary}</p>
+            </section>
+          </div>
+        ) : (
+          <UrlCapturedPageSection
+            report={report}
+            screen={urlCapturedScreen}
+            assetLoadState={
+              screens.length > 0
+                ? "ready"
+                : assetLoadState === "idle" && report.screenAssets?.length
+                  ? "loading"
+                  : assetLoadState
+            }
+            onZoom={(screen) => onZoom(screen)}
+          />
+        )
       ) : null}
 
       {report.pageSummary ? (
@@ -305,7 +333,7 @@ export function ScreenshotReviewReportView({
         </section>
       ) : null}
 
-      {report.executiveSummary ? (
+      {report.executiveSummary && !isMobileUrlCapture ? (
         <section
           aria-labelledby="executive-summary-heading"
           className="rounded-xl border border-border bg-surface p-5 sm:p-6"

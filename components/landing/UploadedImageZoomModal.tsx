@@ -94,9 +94,8 @@ export function UploadedImageZoomModal({
 
   if (!screen) return null;
 
-  const imageHeight = cropHighlight?.crop.height
-    ? screen.height
-    : screen.height;
+  const isMobileCapture = screen.deviceType === "mobile";
+  const imageHeight = screen.height;
   const highlightTop =
     cropHighlight && imageHeight > 0
       ? (cropHighlight.crop.yStart / imageHeight) * 100
@@ -126,7 +125,12 @@ export function UploadedImageZoomModal({
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.98 }}
             transition={{ duration: 0.2 }}
-            className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-surface shadow-panel"
+            className={cn(
+              "flex w-full flex-col overflow-hidden rounded-xl bg-surface shadow-panel",
+              isMobileCapture
+                ? "max-h-[90vh] max-w-[min(92vw,480px)]"
+                : "max-h-[92vh] max-w-4xl"
+            )}
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -166,7 +170,10 @@ export function UploadedImageZoomModal({
                 <img
                   src={screen.previewUrl}
                   alt={`${screen.fileName} 원본`}
-                  className="mx-auto block h-auto max-h-none w-auto max-w-full"
+                  className={cn(
+                    "mx-auto block h-auto w-full",
+                    isMobileCapture ? "max-w-full" : "w-auto max-w-full max-h-none"
+                  )}
                 />
                 {highlightTop !== null && highlightHeight !== null ? (
                   <div

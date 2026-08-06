@@ -2,6 +2,11 @@
 
 import { Button } from "@/components/ui/Button";
 import {
+  isUrlMobileCapture,
+  MOBILE_CAPTURE_PREVIEW_FRAME_CLASS,
+  MOBILE_CAPTURE_PREVIEW_MAX_WIDTH_CLASS,
+} from "@/lib/capture-preview-utils";
+import {
   SCREEN_DEVICE_LABELS,
   type ScreenshotReviewReport,
   type UploadedScreen,
@@ -38,6 +43,7 @@ export function UrlCapturedPageSection({
 }: UrlCapturedPageSectionProps) {
   const urlSource = report.source;
   const assetRef = report.screenAssets?.[0];
+  const isMobileCapture = isUrlMobileCapture(report);
 
   return (
     <section
@@ -85,12 +91,17 @@ export function UrlCapturedPageSection({
             className="min-h-11"
             onClick={() => onZoom(screen)}
           >
-            전체 보기
+            전체 화면 보기
           </Button>
         ) : null}
       </div>
 
-      <div className="mt-4">
+      <div
+        className={cn(
+          "mt-4",
+          isMobileCapture && cn("mx-auto w-full", MOBILE_CAPTURE_PREVIEW_MAX_WIDTH_CLASS, "lg:mx-0")
+        )}
+      >
         {assetLoadState === "loading" ? (
           <div
             className="flex min-h-[240px] items-center justify-center rounded-lg border border-dashed border-border bg-surface-alt/50"
@@ -111,33 +122,54 @@ export function UrlCapturedPageSection({
         ) : null}
 
         {assetLoadState === "ready" && screen ? (
-          <button
-            type="button"
-            onClick={() => onZoom(screen)}
-            className={cn(
-              "group block w-full overflow-hidden rounded-lg border border-border bg-surface-alt/30 text-left",
-              "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-            )}
-            aria-label={`${screen.screenName} 전체 보기`}
-          >
-            <div className="max-h-[min(70vh,720px)] overflow-y-auto overscroll-contain">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={screen.previewUrl}
-                alt={`${screen.screenName} 캡처`}
-                className="mx-auto block h-auto w-full max-w-full object-contain"
-                onError={() =>
-                  logPreviewImageError({
-                    screenId: screen.id,
-                    previewUrl: screen.previewUrl,
-                  })
-                }
-              />
-            </div>
-            <p className="border-t border-border px-4 py-2 text-xs text-ink-muted group-hover:text-ink">
-              클릭하면 전체 화면으로 확대해 볼 수 있어요.
-            </p>
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => onZoom(screen)}
+              className={cn(
+                "group block w-full overflow-hidden rounded-lg border border-border bg-surface-alt/30 text-left",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              )}
+              aria-label={`${screen.screenName} 전체 화면 보기`}
+            >
+              <div
+                className={cn(
+                  "overflow-y-auto overflow-x-hidden overscroll-contain",
+                  isMobileCapture
+                    ? MOBILE_CAPTURE_PREVIEW_FRAME_CLASS
+                    : "max-h-[min(70vh,720px)]"
+                )}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={screen.previewUrl}
+                  alt={`${screen.screenName} 캡처`}
+                  className="block h-auto w-full"
+                  onError={() =>
+                    logPreviewImageError({
+                      screenId: screen.id,
+                      previewUrl: screen.previewUrl,
+                    })
+                  }
+                />
+              </div>
+              <p className="border-t border-border px-4 py-2 text-xs text-ink-muted group-hover:text-ink">
+                {isMobileCapture
+                  ? "프레임 안에서 스크롤하거나 클릭해 전체 화면으로 볼 수 있어요."
+                  : "클릭하면 전체 화면으로 확대해 볼 수 있어요."}
+              </p>
+            </button>
+            {isMobileCapture ? (
+              <Button
+                type="button"
+                variant="secondary"
+                className="mt-3 min-h-11 w-full"
+                onClick={() => onZoom(screen)}
+              >
+                전체 화면 보기
+              </Button>
+            ) : null}
+          </>
         ) : null}
       </div>
     </section>
