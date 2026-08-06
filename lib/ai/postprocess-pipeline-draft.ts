@@ -1,6 +1,14 @@
 import type { CropMetadata } from "@/lib/ai/image-preprocess";
 import type { ScreenshotReviewDraft } from "@/lib/ai/schemas/screenshot-review-draft";
 import type { VisualEvidence } from "@/lib/ai/schemas/shared";
+import {
+  buildAllowedEvidenceTargetsFromMetadata,
+  buildAllowedTargetLookup,
+  getOverviewTarget,
+  getScreenSectionCropCount,
+  type AllowedEvidenceTarget,
+  type ScreenEvidenceTargets,
+} from "@/lib/ai/evidence-targets";
 import { getNormanPrincipleDefinition, isValidNormanPrincipleKey } from "@/lib/ai/norman-principles";
 import type { NormanPrinciple } from "@/lib/types";
 import type { ScreenshotReviewMode } from "@/lib/types";
@@ -21,8 +29,35 @@ const SEVERITY_WEIGHT: Record<"high" | "medium" | "low", number> = {
   low: 2,
 };
 
-const EVIDENCE_EXCLUSION_LIMITATION =
+export const EVIDENCE_EXCLUSION_LIMITATION =
   "현재 이미지에서 충분한 근거를 확보하지 못한 항목은 리뷰에서 제외했습니다.";
+
+export interface PostprocessDiagnostics {
+  phase: "initial" | "rewrite";
+  aiIssueCount: number;
+  aiEvidenceCount: number;
+  validEvidenceCount: number;
+  remappedToOverviewCount: number;
+  droppedEvidenceCount: number;
+  droppedIssueCount: number;
+  finalIssueCount: number;
+  issuesLostInPostprocess: boolean;
+}
+
+export interface PostprocessPipelineResult {
+  draft: ScreenshotReviewDraft;
+  excludedForInsufficientEvidence: boolean;
+  diagnostics: PostprocessDiagnostics;
+}
+
+export interface PostprocessPipelineOptions {
+  reviewMode: ScreenshotReviewMode;
+  allowedEvidenceTargets?: ScreenEvidenceTargets[];
+  phase?: "initial" | "rewrite";
+  /** Quick 등 레거시 호출 — allowedEvidenceTargets 미전달 시 사용 */
+  validScreenIds?: Set<string>;
+  cropMetadata?: CropMetadata[];
+}
 
 function normalizeText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
@@ -50,42 +85,87 @@ function jaccardSimilarity(a: string, b: string): number {
   return union === 0 ? 0 : intersection / union;
 }
 
-function isValidCropId(cropId: string, validCropIds: Set<string>, screenId: string): boolean {
-  if (validCropIds.has(cropId)) return true;
-  // Allow overview reference when no crops exist
-  if (cropId === `${screenId}-overview`) return true;
-  return false;
+function countDraftEvidence(draft: ScreenshotReviewDraft): number {
+  let count = 0;
+  for (const strength of draft.strengths) {
+    count += strength.evidence.length;
+  }
+  for (const issue of draft.issues) {
+    count += issue.evidence.length;
+  }
+  return count;
+}
+
+interface SanitizeEvidenceResult {
+  evidence: VisualEvidence[];
+  remappedToOverviewCount: number;
+  droppedEvidenceCount: number;
 }
 
 function sanitizeEvidence(
   evidence: VisualEvidence[],
-  validScreenIds: Set<string>,
-  validCropIds: Set<string>,
-  cropMetaById: Map<string, CropMetadata>
-): VisualEvidence[] {
+  allowedTargets: ScreenEvidenceTargets[],
+  targetLookup: Map<string, AllowedEvidenceTarget>
+): SanitizeEvidenceResult {
   const seen = new Set<string>();
   const result: VisualEvidence[] = [];
+  let remappedToOverviewCount = 0;
+  let droppedEvidenceCount = 0;
 
   for (const item of evidence) {
-    if (!validScreenIds.has(item.screenId)) continue;
-    if (!isValidCropId(item.cropId, validCropIds, item.screenId)) continue;
+    const key = `${item.screenId}:${item.cropId}`;
+    const observation = item.observation?.trim() ?? "";
 
-    const cropMeta = cropMetaById.get(item.cropId);
-    const locationLabel = cropMeta?.locationLabel ?? item.locationLabel;
-    const key = `${item.screenId}:${item.cropId}:${normalizeText(item.observation)}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (targetLookup.has(key)) {
+      if (!observation) {
+        droppedEvidenceCount += 1;
+        continue;
+      }
 
-    result.push({
-      ...item,
-      locationLabel,
-      source: item.source ?? "visual",
-      domElementId: item.domElementId ?? null,
-      visibleText: item.visibleText ?? null,
-    });
+      const target = targetLookup.get(key)!;
+      const dedupeKey = `${item.screenId}:${item.cropId}:${normalizeText(observation)}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
+      result.push({
+        ...item,
+        locationLabel: target.locationLabel,
+        source: item.source ?? "visual",
+        domElementId: item.domElementId ?? null,
+        visibleText: item.visibleText ?? null,
+      });
+      continue;
+    }
+
+    const sectionCropCount = getScreenSectionCropCount(item.screenId, allowedTargets);
+    const overviewTarget = getOverviewTarget(item.screenId, allowedTargets);
+
+    if (
+      sectionCropCount === 0 &&
+      overviewTarget &&
+      allowedTargets.some((screen) => screen.screenId === item.screenId) &&
+      observation
+    ) {
+      const dedupeKey = `${item.screenId}:${overviewTarget.cropId}:${normalizeText(observation)}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      remappedToOverviewCount += 1;
+
+      result.push({
+        ...item,
+        cropId: overviewTarget.cropId,
+        locationLabel: overviewTarget.locationLabel,
+        source: item.source ?? "visual",
+        domElementId: item.domElementId ?? null,
+        visibleText: item.visibleText ?? null,
+      });
+      continue;
+    }
+
+    droppedEvidenceCount += 1;
   }
 
-  return result;
+  return { evidence: result, remappedToOverviewCount, droppedEvidenceCount };
 }
 
 function sanitizePrinciple(
@@ -113,6 +193,16 @@ function isGenericIssue(issue: ScreenshotReviewDraft["issues"][number]): boolean
   return GENERIC_PHRASES.some((phrase) => normalized.includes(phrase));
 }
 
+function passesDeterministicIssueValidation(
+  issue: ScreenshotReviewDraft["issues"][number]
+): boolean {
+  if (!issue.recommendation.trim()) return false;
+  if (!issue.validationMethod.trim()) return false;
+  if (!issue.title.trim() || !issue.description.trim()) return false;
+  if (!issue.expectedImpact.trim()) return false;
+  return true;
+}
+
 function dedupeIssues(
   issues: ScreenshotReviewDraft["issues"]
 ): ScreenshotReviewDraft["issues"] {
@@ -136,55 +226,81 @@ function maxIssueCount(reviewMode: ScreenshotReviewMode): number {
   return reviewMode === "single-screen" ? 5 : 6;
 }
 
-export interface PostprocessPipelineResult {
-  draft: ScreenshotReviewDraft;
-  excludedForInsufficientEvidence: boolean;
+function resolveAllowedTargets(options: PostprocessPipelineOptions): ScreenEvidenceTargets[] {
+  if (options.allowedEvidenceTargets && options.allowedEvidenceTargets.length > 0) {
+    return options.allowedEvidenceTargets;
+  }
+
+  if (options.validScreenIds && options.cropMetadata) {
+    return buildAllowedEvidenceTargetsFromMetadata(
+      options.cropMetadata,
+      options.validScreenIds
+    );
+  }
+
+  return [];
 }
 
 export function postprocessPipelineDraft(
   draft: ScreenshotReviewDraft,
-  options: {
-    reviewMode: ScreenshotReviewMode;
-    validScreenIds: Set<string>;
-    cropMetadata: CropMetadata[];
-  }
+  options: PostprocessPipelineOptions
 ): PostprocessPipelineResult {
-  const validCropIds = new Set(options.cropMetadata.map((crop) => crop.cropId));
-  for (const screenId of options.validScreenIds) {
-    validCropIds.add(`${screenId}-overview`);
-  }
+  const phase = options.phase ?? "initial";
+  const aiIssueCount = draft.issues.length;
+  const aiEvidenceCount = countDraftEvidence(draft);
 
-  const cropMetaById = new Map(options.cropMetadata.map((crop) => [crop.cropId, crop]));
+  const allowedTargets = resolveAllowedTargets(options);
+  const targetLookup = buildAllowedTargetLookup(allowedTargets);
+
+  let remappedToOverviewCount = 0;
+  let droppedEvidenceCount = 0;
+  let validEvidenceCount = 0;
 
   const strengths = draft.strengths
     .map((strength) => {
-      const evidence = sanitizeEvidence(
-        strength.evidence,
-        options.validScreenIds,
-        validCropIds,
-        cropMetaById
-      );
-      if (evidence.length === 0) return null;
-      return { ...strength, evidence };
+      const sanitized = sanitizeEvidence(strength.evidence, allowedTargets, targetLookup);
+      remappedToOverviewCount += sanitized.remappedToOverviewCount;
+      droppedEvidenceCount += sanitized.droppedEvidenceCount;
+      validEvidenceCount += sanitized.evidence.length;
+
+      if (sanitized.evidence.length === 0) return null;
+      return { ...strength, evidence: sanitized.evidence };
     })
     .filter((item): item is NonNullable<typeof item> => item !== null)
     .slice(0, 4);
 
+  const preFilterIssueCount = draft.issues.length;
+  let droppedIssueCount = 0;
+
   let issues = draft.issues
     .map((issue) => {
-      const evidence = sanitizeEvidence(
-        issue.evidence,
-        options.validScreenIds,
-        validCropIds,
-        cropMetaById
-      );
-      if (evidence.length === 0) return null;
-      return { ...issue, evidence, principle: sanitizePrinciple(issue.principle) };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null)
-    .filter((issue) => !isGenericIssue(issue));
+      const sanitized = sanitizeEvidence(issue.evidence, allowedTargets, targetLookup);
+      remappedToOverviewCount += sanitized.remappedToOverviewCount;
+      droppedEvidenceCount += sanitized.droppedEvidenceCount;
+      validEvidenceCount += sanitized.evidence.length;
 
+      if (sanitized.evidence.length === 0) return null;
+
+      const normalized = {
+        ...issue,
+        evidence: sanitized.evidence,
+        principle: sanitizePrinciple(issue.principle),
+      };
+
+      if (!passesDeterministicIssueValidation(normalized)) return null;
+      return normalized;
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null);
+
+  droppedIssueCount += preFilterIssueCount - issues.length;
+
+  const beforeGenericCount = issues.length;
+  issues = issues.filter((issue) => !isGenericIssue(issue));
+  droppedIssueCount += beforeGenericCount - issues.length;
+
+  const beforeDedupeCount = issues.length;
   issues = dedupeIssues(issues);
+  droppedIssueCount += beforeDedupeCount - issues.length;
 
   issues.sort((a, b) => {
     const severityDiff = SEVERITY_WEIGHT[a.severity] - SEVERITY_WEIGHT[b.severity];
@@ -192,7 +308,9 @@ export function postprocessPipelineDraft(
     return a.title.localeCompare(b.title, "ko");
   });
 
+  const beforeSliceCount = issues.length;
   issues = issues.slice(0, maxIssueCount(options.reviewMode));
+  droppedIssueCount += beforeSliceCount - issues.length;
 
   const limitations = [...draft.limitations];
   let excludedForInsufficientEvidence = false;
@@ -204,6 +322,9 @@ export function postprocessPipelineDraft(
     }
   }
 
+  const finalIssueCount = issues.length;
+  const issuesLostInPostprocess = aiIssueCount > 0 && finalIssueCount === 0;
+
   return {
     draft: {
       ...draft,
@@ -212,6 +333,17 @@ export function postprocessPipelineDraft(
       limitations,
     },
     excludedForInsufficientEvidence,
+    diagnostics: {
+      phase,
+      aiIssueCount,
+      aiEvidenceCount,
+      validEvidenceCount,
+      remappedToOverviewCount,
+      droppedEvidenceCount,
+      droppedIssueCount,
+      finalIssueCount,
+      issuesLostInPostprocess,
+    },
   };
 }
 
@@ -233,4 +365,19 @@ export function collectReferencedCropIds(draft: ScreenshotReviewDraft): Set<stri
   return cropIds;
 }
 
-export { EVIDENCE_EXCLUSION_LIMITATION, GENERIC_PHRASES };
+export { GENERIC_PHRASES };
+
+export function shouldFallbackToInitialProcessedDraft(input: {
+  initialProcessed: PostprocessPipelineResult;
+  rewrittenDraft: ScreenshotReviewDraft;
+  rewrittenProcessed: PostprocessPipelineResult;
+}): boolean {
+  if (input.initialProcessed.draft.issues.length === 0) return false;
+  if (input.rewrittenDraft.issues.length === 0) return false;
+  if (input.rewrittenProcessed.draft.issues.length > 0) return false;
+
+  return (
+    input.rewrittenProcessed.diagnostics.issuesLostInPostprocess ||
+    input.rewrittenProcessed.diagnostics.droppedIssueCount > 0
+  );
+}

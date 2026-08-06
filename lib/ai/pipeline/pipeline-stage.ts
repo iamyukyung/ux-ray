@@ -136,6 +136,47 @@ export function logStageComplete(input: {
   console.info("[screenshot-review:stage-complete]", input);
 }
 
+export function logPostprocessDiagnostics(input: {
+  requestId: string;
+  phase: "initial" | "rewrite";
+  aiIssueCount: number;
+  aiEvidenceCount: number;
+  validEvidenceCount: number;
+  remappedToOverviewCount: number;
+  droppedEvidenceCount: number;
+  droppedIssueCount: number;
+  finalIssueCount: number;
+}): void {
+  if (process.env.NODE_ENV !== "development") return;
+
+  console.info("[screenshot-review:postprocess]", input);
+}
+
+export function logCriticResult(input: {
+  requestId: string;
+  approved: boolean;
+  problemTypes: string[];
+  problemCount: number;
+  missingHighValueFindingCount: number;
+  rewriteInstructionCount: number;
+}): void {
+  if (process.env.NODE_ENV !== "development") return;
+
+  console.info("[screenshot-review:critic-result]", input);
+}
+
+export function logRewriteFallback(input: {
+  requestId: string;
+  initialValidIssueCount: number;
+  rewrittenAiIssueCount: number;
+  rewrittenValidIssueCount: number;
+  reason: string;
+}): void {
+  if (process.env.NODE_ENV !== "development") return;
+
+  console.info("[screenshot-review:rewrite-fallback]", input);
+}
+
 export function logPipelineComplete(input: {
   requestId: string;
   totalDurationMs: number;

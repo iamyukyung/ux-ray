@@ -36,7 +36,13 @@ import {
 } from "@/lib/ai/pipeline/pipeline-timeout";
 import {
   postprocessPipelineDraft,
+  shouldFallbackToInitialProcessedDraft,
 } from "@/lib/ai/postprocess-pipeline-draft";
+import {
+  buildAllowedEvidenceTargets,
+  countAllowedTargets,
+  type ScreenEvidenceTargets,
+} from "@/lib/ai/evidence-targets";
 import { runOpenAiSchemaSmokeCheck } from "@/lib/ai/schemas/schema-smoke-check";
 import {
   buildObserverScreenPrompt,
@@ -76,7 +82,10 @@ import {
 import {
   createStageTracker,
   logOpenAICallPrep,
+  logCriticResult,
   logPipelineComplete,
+  logPostprocessDiagnostics,
+  logRewriteFallback,
   logScreenshotReviewError,
   logStageComplete,
   pipelineFailure,
@@ -178,6 +187,7 @@ function buildReviewerInput(
   processedScreens: ProcessedScreenImage[],
   config: ReturnType<typeof getAiModelConfig>,
   selectedCrops: ProcessedCrop[],
+  allowedEvidenceTargets: ScreenEvidenceTargets[],
   urlContext: ValidatedScreenshotInput["urlContext"],
   rewrite?: {
     previousDraft: ScreenshotReviewDraft;
@@ -203,6 +213,7 @@ function buildReviewerInput(
         targetUser: context.targetUser,
         focusArea: context.focusArea,
         screenOrder,
+        allowedEvidenceTargets,
         urlContext: urlContext
           ? {
               requestedUrl: urlContext.requestedUrl,
@@ -224,6 +235,7 @@ function buildReviewerInput(
           problems: rewrite.critique.problems,
           missingHighValueFindings: rewrite.critique.missingHighValueFindings,
           rewriteInstructions: rewrite.critique.rewriteInstructions,
+          allowedEvidenceTargets,
         })
       ),
       textPart(`이전 Draft JSON:\n${JSON.stringify(rewrite.previousDraft, null, 2)}`)
@@ -277,6 +289,7 @@ async function runReviewer(
   observations: ScreenshotObservation[],
   processedScreens: ProcessedScreenImage[],
   selectedCrops: ProcessedCrop[],
+  allowedEvidenceTargets: ScreenEvidenceTargets[],
   urlContext: ValidatedScreenshotInput["urlContext"],
   requestId: string,
   deadline: PipelineDeadlineContext,
@@ -312,6 +325,7 @@ async function runReviewer(
       processedScreens,
       config,
       selectedCrops,
+      allowedEvidenceTargets,
       urlContext,
       rewrite
     ),
@@ -329,6 +343,7 @@ function buildCriticInput(
   draft: ScreenshotReviewDraft,
   processedScreens: ProcessedScreenImage[],
   selectedCrops: ProcessedCrop[],
+  allowedEvidenceTargets: ScreenEvidenceTargets[],
   config: ReturnType<typeof getAiModelConfig>
 ): OpenAI.Responses.ResponseCreateParams["input"] {
   const selectedCropIds = reviewerCropIdSet(selectedCrops);
@@ -339,6 +354,7 @@ function buildCriticInput(
         reviewLens: context.reviewLens,
         userGoal: context.userGoal,
         focusArea: context.focusArea,
+        allowedEvidenceTargets,
       })
     ),
     textPart(`Observation JSON:\n${JSON.stringify(observations, null, 2)}`),
@@ -379,6 +395,7 @@ async function runCritic(
   draft: ScreenshotReviewDraft,
   processedScreens: ProcessedScreenImage[],
   selectedCrops: ProcessedCrop[],
+  allowedEvidenceTargets: ScreenEvidenceTargets[],
   requestId: string,
   deadline: PipelineDeadlineContext,
   tracker: PipelineStageTracker
@@ -408,6 +425,7 @@ async function runCritic(
       draft,
       processedScreens,
       selectedCrops,
+      allowedEvidenceTargets,
       config
     ),
     schema: ScreenshotReviewCritiqueSchema,
@@ -465,8 +483,8 @@ export async function runScreenshotPipelineV2(
     }
 
     const cropMetadata = collectCropMetadata(processedScreens);
-    const validScreenIds = new Set(sortedScreens.map((screen) => screen.id));
     const validCropIds = buildValidCropIdSet(processedScreens);
+    const allowedEvidenceTargets = buildAllowedEvidenceTargets(processedScreens, cropMetadata);
 
     const observerStartedAt = Date.now();
     const observations: ScreenshotObservation[] = [];
@@ -516,13 +534,14 @@ export async function runScreenshotPipelineV2(
     deadline.assertNotAborted(tracker.stage);
 
     const initialReviewerCrops = selectReviewerCrops(processedScreens, { validCropIds });
-    let draft = await runReviewer(
+    const initialDraft = await runReviewer(
       client,
       config,
       input.metadata,
       observations,
       processedScreens,
       initialReviewerCrops,
+      allowedEvidenceTargets,
       input.urlContext,
       requestId,
       deadline,
@@ -532,7 +551,7 @@ export async function runScreenshotPipelineV2(
     setPipelineStage(tracker, "reviewer-parse");
     deadline.assertNotAborted(tracker.stage);
 
-    if (!draft) {
+    if (!initialDraft) {
       responded = true;
       return pipelineFailure(
         tracker,
@@ -551,20 +570,28 @@ export async function runScreenshotPipelineV2(
       success: true,
     });
 
+    const initialProcessed = postprocessPipelineDraft(initialDraft, {
+      reviewMode: input.metadata.screenLayoutMode,
+      allowedEvidenceTargets,
+      phase: "initial",
+    });
+    logPostprocessDiagnostics({ requestId, ...initialProcessed.diagnostics });
+
     deadline.ensureTimeForStage("critic-request", CRITIC_MIN_REMAINING_MS);
     setPipelineStage(tracker, "critic-request");
     deadline.assertNotAborted(tracker.stage);
 
     const criticStartedAt = Date.now();
-    const criticCrops = selectCriticCrops(processedScreens, draft, validCropIds);
-    let critique = await runCritic(
+    const criticCrops = selectCriticCrops(processedScreens, initialDraft, validCropIds);
+    const critique = await runCritic(
       client,
       config,
       input.metadata,
       observations,
-      draft,
+      initialDraft,
       processedScreens,
       criticCrops,
+      allowedEvidenceTargets,
       requestId,
       deadline,
       tracker
@@ -592,7 +619,22 @@ export async function runScreenshotPipelineV2(
       success: true,
     });
 
+    logCriticResult({
+      requestId,
+      approved: isCritiqueApproved(critique),
+      problemTypes: [...new Set(critique.problems.map((problem) => problem.type))],
+      problemCount: critique.problems.length,
+      missingHighValueFindingCount: critique.missingHighValueFindings.length,
+      rewriteInstructionCount: critique.rewriteInstructions.length,
+    });
+
+    let rewriteAttempted = false;
+    let rewriteApplied = false;
+    let finalProcessed = initialProcessed;
+    let aiIssueCount = initialDraft.issues.length;
+
     if (!isCritiqueApproved(critique)) {
+      rewriteAttempted = true;
       deadline.ensureTimeForStage("reviewer-request", CRITIC_MIN_REMAINING_MS);
       deadline.assertNotAborted(tracker.stage);
 
@@ -601,7 +643,7 @@ export async function runScreenshotPipelineV2(
 
       const rewriteCrops = selectReviewerCrops(processedScreens, {
         validCropIds,
-        draft,
+        draft: initialDraft,
       });
 
       const rewritten = await runReviewer(
@@ -611,11 +653,12 @@ export async function runScreenshotPipelineV2(
         observations,
         processedScreens,
         rewriteCrops,
+        allowedEvidenceTargets,
         input.urlContext,
         requestId,
         deadline,
         tracker,
-        { previousDraft: draft, critique }
+        { previousDraft: initialDraft, critique }
       );
 
       rewriteDurationMs = Date.now() - rewriteStartedAt;
@@ -630,55 +673,47 @@ export async function runScreenshotPipelineV2(
       deadline.assertNotAborted(tracker.stage);
 
       if (rewritten) {
-        draft = rewritten;
-        wasRewritten = true;
+        const rewrittenProcessed = postprocessPipelineDraft(rewritten, {
+          reviewMode: input.metadata.screenLayoutMode,
+          allowedEvidenceTargets,
+          phase: "rewrite",
+        });
+        logPostprocessDiagnostics({ requestId, ...rewrittenProcessed.diagnostics });
 
-        deadline.ensureTimeForStage("critic-request", CRITIC_MIN_REMAINING_MS);
-        setPipelineStage(tracker, "critic-request");
-        deadline.assertNotAborted(tracker.stage);
+        if (
+          shouldFallbackToInitialProcessedDraft({
+            initialProcessed,
+            rewrittenDraft: rewritten,
+            rewrittenProcessed,
+          })
+        ) {
+          const reason =
+            rewrittenProcessed.diagnostics.issuesLostInPostprocess
+              ? "all-rewritten-issues-lost-invalid-evidence"
+              : "all-rewritten-issues-lost-deterministic-validation";
 
-        const secondCriticStartedAt = Date.now();
-        const secondCriticCrops = selectCriticCrops(processedScreens, draft, validCropIds);
-        critique = await runCritic(
-          client,
-          config,
-          input.metadata,
-          observations,
-          draft,
-          processedScreens,
-          secondCriticCrops,
-          requestId,
-          deadline,
-          tracker
-        );
-        criticDurationMs += Date.now() - secondCriticStartedAt;
+          logRewriteFallback({
+            requestId,
+            initialValidIssueCount: initialProcessed.draft.issues.length,
+            rewrittenAiIssueCount: rewritten.issues.length,
+            rewrittenValidIssueCount: rewrittenProcessed.draft.issues.length,
+            reason,
+          });
 
-        setPipelineStage(tracker, "critic-parse");
-        deadline.assertNotAborted(tracker.stage);
-
-        if (!critique) {
-          responded = true;
-          return pipelineFailure(
-            tracker,
-            apiError(
-              "INVALID_AI_RESPONSE",
-              "AI 분석 결과를 해석하지 못했어요. 잠시 후 다시 시도해주세요."
-            )
-          );
+          finalProcessed = initialProcessed;
+          aiIssueCount = initialDraft.issues.length;
+        } else {
+          finalProcessed = rewrittenProcessed;
+          rewriteApplied = true;
+          wasRewritten = true;
+          aiIssueCount = rewritten.issues.length;
         }
       }
     }
 
-    const postprocessed = postprocessPipelineDraft(draft, {
-      reviewMode: input.metadata.screenLayoutMode,
-      validScreenIds,
-      cropMetadata,
-    });
+    const finalDraft = finalProcessed.draft;
 
-    const aiIssueCount = draft.issues.length;
-    const finalDraft = postprocessed.draft;
-
-    if (finalDraft.issues.length === 0 && !postprocessed.excludedForInsufficientEvidence) {
+    if (finalDraft.issues.length === 0 && !finalProcessed.excludedForInsufficientEvidence) {
       responded = true;
       return pipelineFailure(
         tracker,
@@ -689,14 +724,24 @@ export async function runScreenshotPipelineV2(
       );
     }
 
+    // quality scores는 Critic 1차 평가(rewrite 전 검수) 결과입니다.
     const quality = {
       specificity: critique.scores.specificity,
       evidenceQuality: critique.scores.evidenceQuality,
       actionability: critique.scores.actionability,
       prioritization: critique.scores.prioritization,
       nonHallucination: critique.scores.nonHallucination,
-      wasRewritten,
+      wasRewritten: rewriteApplied,
     };
+
+    if (process.env.NODE_ENV === "development") {
+      console.info("[screenshot-review:rewrite-state]", {
+        requestId,
+        rewriteAttempted,
+        rewriteApplied,
+        allowedTargetCount: countAllowedTargets(allowedEvidenceTargets),
+      });
+    }
 
     setPipelineStage(tracker, "report-assembly");
     deadline.assertNotAborted(tracker.stage);

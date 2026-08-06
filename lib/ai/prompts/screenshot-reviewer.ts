@@ -1,5 +1,9 @@
 import type { ReviewLens } from "@/lib/types";
 import { buildNormanPrinciplesPromptReference } from "@/lib/ai/norman-principles";
+import {
+  formatAllowedTargetsForPrompt,
+  type ScreenEvidenceTargets,
+} from "@/lib/ai/evidence-targets";
 
 const REVIEWER_BASE_PROMPT = `당신은 시니어 UX 디자이너입니다.
 화면 관찰(Observation) 결과를 바탕으로 전문 UX 리뷰 초안을 작성합니다.
@@ -96,6 +100,7 @@ export function buildReviewerContextPrompt(input: {
   targetUser?: string;
   focusArea?: string;
   screenOrder: Array<{ screenId: string; screenName: string; order: number }>;
+  allowedEvidenceTargets: ScreenEvidenceTargets[];
   urlContext?: {
     requestedUrl: string;
     finalUrl: string;
@@ -120,9 +125,16 @@ export function buildReviewerContextPrompt(input: {
       (screen) => `${screen.order + 1}. ${screen.screenName} (${screen.screenId})`
     ),
     "",
-    "Evidence의 cropId 규칙:",
-    "- Section crop이 있는 화면: 해당 cropId 사용 (예: screen-1-crop-2)",
-    "- 분할하지 않은 화면: {screenId}-overview 형식 사용 (예: screen-1-overview)",
+    "Allowed Evidence Targets (Evidence의 screenId·cropId는 아래 목록에서만 선택):",
+    formatAllowedTargetsForPrompt(input.allowedEvidenceTargets),
+    "",
+    "Evidence 규칙:",
+    "- screenId와 cropId는 Allowed Evidence Targets 목록에 있는 값만 사용한다.",
+    "- 목록에 없는 cropId를 새로 만들지 않는다.",
+    "- section crop이 없는 화면은 {screenId}-overview만 사용한다.",
+    "- 전체 화면(overview) 근거도 유효한 Evidence다.",
+    "- DOM 기반 Evidence라도 유효한 visual target(screenId·cropId)을 함께 사용한다.",
+    "- 정확한 위치를 확인할 수 없으면 존재하지 않는 crop을 추측하지 않는다.",
   ];
 
   if (input.urlContext) {
@@ -155,9 +167,23 @@ export function buildReviewerRewritePrompt(input: {
   problems: Array<{ issueId: string | null; type: string; description: string }>;
   missingHighValueFindings: string[];
   rewriteInstructions: string[];
+  allowedEvidenceTargets: ScreenEvidenceTargets[];
 }): string {
   const sections = [
     "이전 초안에 대한 Critic 피드백입니다. 아래 내용을 반영해 초안을 한 번 재작성하세요.",
+    "",
+    "기존 Draft의 cropId를 그대로 신뢰하지 말고, 아래 Allowed Evidence Targets 중 하나로 다시 연결하세요.",
+    "",
+    "Allowed Evidence Targets:",
+    formatAllowedTargetsForPrompt(input.allowedEvidenceTargets),
+    "",
+    "Evidence 규칙:",
+    "- screenId와 cropId는 Allowed Evidence Targets 목록에 있는 값만 사용한다.",
+    "- 목록에 없는 cropId를 새로 만들지 않는다.",
+    "- section crop이 없는 화면은 {screenId}-overview만 사용한다.",
+    "- 전체 화면(overview) 근거도 유효한 Evidence다.",
+    "- DOM 기반 Evidence라도 유효한 visual target을 함께 사용한다.",
+    "- 정확한 위치를 확인할 수 없으면 존재하지 않는 crop을 추측하지 않는다.",
     "",
     "## 문제점",
     ...input.problems.map(

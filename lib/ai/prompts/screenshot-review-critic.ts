@@ -1,4 +1,8 @@
 import type { ReviewLens } from "@/lib/types";
+import {
+  formatAllowedTargetsForPrompt,
+  type ScreenEvidenceTargets,
+} from "@/lib/ai/evidence-targets";
 
 export const SCREENSHOT_CRITIC_SYSTEM_PROMPT = `당신은 독립적인 UX 리뷰 품질 검수자(Critic)입니다.
 Reviewer의 초안을 그대로 믿지 말고 이미지와 Observation을 대조해 검증하세요.
@@ -40,6 +44,7 @@ export function buildCriticInputPrompt(input: {
   reviewLens: ReviewLens;
   userGoal?: string;
   focusArea?: string;
+  allowedEvidenceTargets: ScreenEvidenceTargets[];
 }): string {
   const lensLabel =
     input.reviewLens === "norman" ? "노먼 기반 리뷰" : "종합 UX 리뷰";
@@ -49,7 +54,11 @@ export function buildCriticInputPrompt(input: {
     input.userGoal ? `사용자 목표: ${input.userGoal}` : null,
     input.focusArea ? `집중 검토 영역: ${input.focusArea}` : null,
     "",
+    "Allowed Evidence Targets (Draft evidence가 참조할 수 있는 유효 target):",
+    formatAllowedTargetsForPrompt(input.allowedEvidenceTargets),
+    "",
     "아래 Observation과 Reviewer Draft를 검증하세요.",
+    "Draft에서 참조한 cropId가 Allowed Evidence Targets에 있는지 확인하세요.",
     "Draft에서 참조한 crop 이미지와 Overview를 대조하세요.",
     "각 issue의 principle 필드도 위 검증 기준에 따라 확인하세요.",
   ];
