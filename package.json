@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node scripts/start-production.mjs",
     "lint": "next lint",
     "test:crop": "npx tsx --test lib/ai/image-crop-validation.test.ts",
     "postinstall": "playwright install chromium"
